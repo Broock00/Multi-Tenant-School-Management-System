@@ -1,0 +1,31 @@
+School Management Platform
+Subscription {{ action|title }}
+
+Dear Principal,
+
+Your school's subscription has been {{ action }}.
+
+Subscription Details:
+- School: {{ school.name }}
+- Plan: {{ subscription.plan }}
+- Status: {{ subscription.status|title }}
+- Amount: ${{ subscription.amount }}
+- Start Date: {{ subscription.startDate }}
+- End Date: {{ subscription.endDate }}
+- Auto Renew: {{ subscription.autoRenew|yesno:"Yes,No" }}
+
+{% if subscription.features %}
+Plan Features:
+{% for feature in subscription.features %}
+- {{ feature }}
+{% endfor %}
+{% endif %}
+
+If you have any questions or need assistance, please don't hesitate to contact our support team.
+
+Best regards,
+School Management Platform Team
+
+---
+This is an automated notification. Please do not reply to this email.
+© 2025 School Management Platform. All rights reserved. 

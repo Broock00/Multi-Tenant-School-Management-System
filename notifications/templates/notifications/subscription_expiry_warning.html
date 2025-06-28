@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #ff9800;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ff9800;
+        }
+        .details {
+            background-color: white;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 4px solid #1976d2;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 12px;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #1976d2;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚠️ Subscription Expiring Soon</h1>
+        <h2>{{ school.name }}</h2>
+    </div>
+    
+    <div class="content">
+        <p>Dear Principal,</p>
+        
+        <div class="warning">
+            <h3>⚠️ Important Notice</h3>
+            <p>Your school's subscription will expire in <strong>{{ days_remaining }} days</strong>.</p>
+        </div>
+        
+        <div class="details">
+            <h3>Subscription Details:</h3>
+            <ul>
+                <li><strong>School:</strong> {{ school.name }}</li>
+                <li><strong>Plan:</strong> {{ subscription.plan }}</li>
+                <li><strong>Current Status:</strong> {{ subscription.status|title }}</li>
+                <li><strong>Amount:</strong> ${{ subscription.amount }}</li>
+                <li><strong>Start Date:</strong> {{ subscription.startDate }}</li>
+                <li><strong>End Date:</strong> {{ subscription.endDate }}</li>
+                <li><strong>Days Remaining:</strong> {{ days_remaining }} days</li>
+            </ul>
+        </div>
+        
+        <p><strong>What happens when your subscription expires?</strong></p>
+        <ul>
+            <li>Access to premium features will be limited</li>
+            <li>Data backup and storage may be affected</li>
+            <li>Support services may be reduced</li>
+        </ul>
+        
+        <p><strong>To avoid service interruption:</strong></p>
+        <ul>
+            <li>Contact our support team to renew your subscription</li>
+            <li>Consider upgrading to a higher plan for additional features</li>
+            <li>Set up auto-renewal for seamless service</li>
+        </ul>
+        
+        <p style="text-align: center;">
+            <a href="#" class="cta-button">Renew Subscription Now</a>
+        </p>
+        
+        <p>If you have any questions or need assistance with renewal, please contact our support team immediately.</p>
+        
+        <p>Best regards,<br>
+        School Management Platform Team</p>
+    </div>
+    
+    <div class="footer">
+        <p>This is an automated notification. Please do not reply to this email.</p>
+        <p>&copy; 2025 School Management Platform. All rights reserved.</p>
+    </div>
+</body>
+</html> 
