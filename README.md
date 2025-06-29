@@ -2,7 +2,7 @@
 
 A comprehensive school management system built with Django (backend) and React (frontend) that supports multiple schools with role-based access control, subscription management, and real-time notifications.
 
-## 🚀 Features
+## Features
 
 ### Core Features
 - **Multi-tenant Architecture**: Support for multiple schools with isolated data
@@ -25,7 +25,7 @@ A comprehensive school management system built with Django (backend) and React (
 - **Email Notifications**: Automated email alerts
 - **Database**: PostgreSQL with tenant isolation
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Backend
 - **Django 4.2.23**: Web framework
@@ -45,7 +45,7 @@ A comprehensive school management system built with Django (backend) and React (
 - **Axios 1.10.0**: HTTP client
 - **React Scripts 5.0.1**: Build tools
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8+
 - Node.js 16+
@@ -53,7 +53,7 @@ A comprehensive school management system built with Django (backend) and React (
 - Redis 6+
 - Git
 
-## 🚀 Installation
+## Installation
 
 ### 1. Clone the Repository
 ```bash
@@ -159,7 +159,7 @@ Multi-Tenant School Management Platform/
 └── manage.py             # Django management script
 ```
 
-## 🔐 User Roles and Permissions
+## User Roles and Permissions
 
 ### Super Admin
 - Manage all schools and users
