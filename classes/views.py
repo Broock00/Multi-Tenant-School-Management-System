@@ -79,6 +79,16 @@ class ClassViewSet(viewsets.ModelViewSet):
         
         return Response(attendance_data)
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        school = getattr(user, 'school', None)
+        serializer.save(school=school)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        school = getattr(user, 'school', None)
+        serializer.save(school=school)
+
 
 class SubjectViewSet(viewsets.ModelViewSet):
     """Subject management viewset"""

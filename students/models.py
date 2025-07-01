@@ -17,7 +17,7 @@ class Student(models.Model):
     current_class = models.ForeignKey(Class, on_delete=models.SET_NULL, null=True, blank=True, related_name='enrolled_students')
     
     # Personal Information
-    student_id = models.CharField(max_length=20, unique=True, help_text="Unique student ID")
+    student_id = models.CharField(max_length=20, unique=True, help_text="Auto-generated student ID (do not set manually)")
     date_of_birth = models.DateField()
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
     address = models.TextField()
@@ -27,7 +27,7 @@ class Student(models.Model):
     
     # Academic Information
     enrollment_date = models.DateField(auto_now_add=True)
-    graduation_date = models.DateField(null=True, blank=True)
+    year = models.CharField(max_length=4, help_text="Academic year (e.g., 1, 2, ..., 12)")
     is_active = models.BooleanField(default=True)
     academic_status = models.CharField(max_length=20, default='enrolled', choices=[
         ('enrolled', 'Enrolled'),
@@ -53,15 +53,19 @@ class Student(models.Model):
         return f"{self.user.get_full_name()} - {self.student_id}"
     
     @property
-    def full_name(self):
-        return self.user.get_full_name()
-    
-    @property
-    def email(self):
-        return self.user.email
-    
-    @property
     def age(self):
         from datetime import date
+        dob = self.date_of_birth
+        if not dob:
+            return None
+        if not isinstance(dob, date):
+            return None
         today = date.today()
-        return today.year - self.date_of_birth.year - ((today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day))
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+    def save(self, *args, **kwargs):
+        if not self.student_id:
+            last = self.__class__.objects.order_by('-id').first()
+            next_id = 1 if not last else last.id + 1
+            self.student_id = f'STU{next_id:04d}'
+        super().save(*args, **kwargs)

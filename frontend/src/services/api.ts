@@ -122,6 +122,8 @@ export const classesAPI = {
   createClass: (data: any) => api.post('/classes/', data),
   updateClass: (id: number, data: any) => api.put(`/classes/${id}/`, data),
   deleteClass: (id: number) => api.delete(`/classes/${id}/`),
+  getClassStudents: (id: number) => api.get(`/classes/${id}/students/`),
+  getClassSchedule: (id: number) => api.get(`/classes/${id}/schedule/`),
 };
 
 // Fees API

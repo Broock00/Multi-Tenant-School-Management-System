@@ -70,6 +70,12 @@ interface DashboardStats {
     status: string;
     message: string;
   };
+  school_stats?: {
+    school_name: string;
+    total_students: number;
+    total_classes: number;
+    total_teachers: number;
+  };
 }
 
 const Dashboard: React.FC = () => {
@@ -416,7 +422,9 @@ const Dashboard: React.FC = () => {
         <Box>
           <Typography variant="h4" gutterBottom>
             <DashboardIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-            Dashboard
+            {user?.role === 'school_admin' && stats.school_stats?.school_name
+              ? stats.school_stats.school_name
+              : 'Dashboard'}
           </Typography>
           <Typography variant="body1" color="text.secondary">
             Welcome back, {user?.first_name || user?.username}!
@@ -440,70 +448,147 @@ const Dashboard: React.FC = () => {
 
       {/* Statistics Cards */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 3, mb: 4 }}>
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box>
-                <Typography color="text.secondary" gutterBottom variant="body2">
-                  Total Schools
-                </Typography>
-                <Typography variant="h4" component="div">
-                  {stats.totalSchools}
-                </Typography>
-              </Box>
-              <School sx={{ fontSize: 40, color: 'primary.main' }} />
-            </Box>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box>
-                <Typography color="text.secondary" gutterBottom variant="body2">
-                  Total Users
-                </Typography>
-                <Typography variant="h4" component="div">
-                  {stats.totalUsers}
-                </Typography>
-              </Box>
-              <People sx={{ fontSize: 40, color: 'success.main' }} />
-            </Box>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box>
-                <Typography color="text.secondary" gutterBottom variant="body2">
-                  Active Subscriptions
-                </Typography>
-                <Typography variant="h4" component="div">
-                  {stats.activeSubscriptions}
-                </Typography>
-              </Box>
-              <Payment sx={{ fontSize: 40, color: 'warning.main' }} />
-            </Box>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box>
-                <Typography color="text.secondary" gutterBottom variant="body2">
-                  System Health
-                </Typography>
-                <Typography variant="h4" component="div">
-                  <Chip
-                    label={stats.systemHealth}
-                    color={getHealthColor(stats.systemHealth) as any}
-                    size="small"
-                  />
-                </Typography>
-              </Box>
-              <CheckCircle sx={{ fontSize: 40, color: 'success.main' }} />
-            </Box>
-          </CardContent>
-        </Card>
+        {user?.role === 'school_admin' && stats.school_stats ? (
+          <>
+            {/* Total Classes */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Total Classes
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.school_stats.total_classes}
+                    </Typography>
+                  </Box>
+                  <School sx={{ fontSize: 40, color: 'primary.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            {/* Total Students */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Total Students
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.school_stats.total_students}
+                    </Typography>
+                  </Box>
+                  <People sx={{ fontSize: 40, color: 'success.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            {/* Total Teachers */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Total Teachers
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.school_stats.total_teachers}
+                    </Typography>
+                  </Box>
+                  <People sx={{ fontSize: 40, color: 'info.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            {/* System Health Card */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      System Health
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      <Chip
+                        label={stats.systemHealth}
+                        color={getHealthColor(stats.systemHealth) as any}
+                        size="small"
+                      />
+                    </Typography>
+                  </Box>
+                  <CheckCircle sx={{ fontSize: 40, color: 'success.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          // Default cards for super admin and others
+          <>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Total Schools
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.totalSchools}
+                    </Typography>
+                  </Box>
+                  <School sx={{ fontSize: 40, color: 'primary.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Total Users
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.totalUsers}
+                    </Typography>
+                  </Box>
+                  <People sx={{ fontSize: 40, color: 'success.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      Active Subscriptions
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      {stats.activeSubscriptions}
+                    </Typography>
+                  </Box>
+                  <Payment sx={{ fontSize: 40, color: 'warning.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+            {/* System Health Card */}
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography color="text.secondary" gutterBottom variant="body2">
+                      System Health
+                    </Typography>
+                    <Typography variant="h4" component="div">
+                      <Chip
+                        label={stats.systemHealth}
+                        color={getHealthColor(stats.systemHealth) as any}
+                        size="small"
+                      />
+                    </Typography>
+                  </Box>
+                  <CheckCircle sx={{ fontSize: 40, color: 'success.main' }} />
+                </Box>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </Box>
 
       {/* Quick Actions */}

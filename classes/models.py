@@ -1,9 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from schools.models import School
 
 
 class Class(models.Model):
     """Class/Grade model"""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='classes')
     name = models.CharField(max_length=50)  # e.g., "Class 10", "Grade 11"
     section = models.CharField(max_length=10, blank=True)  # e.g., "A", "B", "Science"
     academic_year = models.CharField(max_length=20)
@@ -18,7 +20,7 @@ class Class(models.Model):
         ordering = ['name', 'section']
     
     def __str__(self):
-        return f"{self.name} - {self.section} ({self.academic_year})"
+        return f"{self.name} - {self.section} ({self.academic_year}) [{self.school.name}]"
     
     @property
     def current_students_count(self):

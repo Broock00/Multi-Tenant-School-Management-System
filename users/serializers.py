@@ -4,6 +4,7 @@ from .models import User, Teacher, Principal, Accountant, UserPermission, UserAc
 from schools.models import School, Subscription
 from core.models import SystemSettings
 from django.utils import timezone
+from users.models import User
 
 
 class SchoolSerializer(serializers.ModelSerializer):
@@ -212,6 +213,7 @@ class DashboardSerializer(serializers.Serializer):
     recent_activities = serializers.SerializerMethodField()
     quick_stats = serializers.SerializerMethodField()
     subscription_alert = serializers.SerializerMethodField()
+    school_stats = serializers.SerializerMethodField()
     
     def get_role_specific_data(self, obj):
         """Get role-specific data for dashboard"""
@@ -386,6 +388,28 @@ class DashboardSerializer(serializers.Serializer):
                     'days_remaining': days_remaining,
                     'message': alert
                 }
+        return None
+
+    def get_school_stats(self, obj):
+        """Return school-specific stats for school admins"""
+        if obj.role == User.UserRole.SCHOOL_ADMIN and obj.school:
+            from students.models import Student
+            from classes.models import Class
+            school = obj.school
+            # Total students in this school
+            total_students = Student.objects.filter(school=school).count()
+            # Classes: get all classes that have at least one student in this school
+            class_ids = Student.objects.filter(school=school, current_class__isnull=False).values_list('current_class', flat=True).distinct()
+            total_classes = class_ids.count()
+            # Total teachers in this school
+            total_teachers = User.objects.filter(role=User.UserRole.TEACHER, school=school).count()
+            # You can add more stats as needed (e.g., recent enrollments)
+            return {
+                'school_name': school.name,
+                'total_students': total_students,
+                'total_classes': total_classes,
+                'total_teachers': total_teachers,
+            }
         return None
 
 
