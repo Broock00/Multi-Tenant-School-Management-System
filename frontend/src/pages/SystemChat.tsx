@@ -16,6 +16,8 @@ import {
   IconButton,
   Badge,
   ListItemButton,
+  Autocomplete,
+  CircularProgress,
 } from '@mui/material';
 import {
   Send,
@@ -24,6 +26,9 @@ import {
   Business,
   MoreVert,
 } from '@mui/icons-material';
+import { chatAPI } from '../services/api';
+import { schoolsAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Message {
   id: number;
@@ -47,64 +52,74 @@ interface ChatSession {
 const SystemChat: React.FC = () => {
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [message, setMessage] = useState('');
-  const [chats, setChats] = useState<ChatSession[]>([
-    {
-      id: 1,
-      school: 'Springfield High School',
-      admin: 'John Smith',
-      lastMessage: 'We need help with the new analytics feature',
-      lastMessageTime: '2025-06-22T15:30:00Z',
-      unreadCount: 2,
-      isActive: true,
-    },
-    {
-      id: 2,
-      school: 'Riverside Academy',
-      admin: 'Sarah Johnson',
-      lastMessage: 'Thank you for the quick response',
-      lastMessageTime: '2025-06-22T14:15:00Z',
-      unreadCount: 0,
-      isActive: false,
-    },
-    {
-      id: 3,
-      school: 'Central Elementary',
-      admin: 'Mike Wilson',
-      lastMessage: 'When will the maintenance be completed?',
-      lastMessageTime: '2025-06-22T12:45:00Z',
-      unreadCount: 1,
-      isActive: true,
-    },
-  ]);
-
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      sender: 'John Smith',
-      senderRole: 'School Admin',
-      content: 'Hello, we need help with the new analytics feature. It seems to be showing incorrect data.',
-      timestamp: '2025-06-22T15:25:00Z',
-      isRead: true,
-    },
-    {
-      id: 2,
-      sender: 'System Administrator',
-      senderRole: 'Super Admin',
-      content: 'Hello John! I can help you with that. Can you please provide more details about what specific data seems incorrect?',
-      timestamp: '2025-06-22T15:26:00Z',
-      isRead: true,
-    },
-    {
-      id: 3,
-      sender: 'John Smith',
-      senderRole: 'School Admin',
-      content: 'The student attendance reports are showing numbers that don\'t match our records. We have 250 students but it shows 280.',
-      timestamp: '2025-06-22T15:30:00Z',
-      isRead: false,
-    },
-  ]);
+  const [chats, setChats] = useState<ChatSession[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingChats, setLoadingChats] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { user: currentUser } = useAuth();
+
+  // Fetch chat rooms (admin type, super admin <-> school admin or super admin)
+  useEffect(() => {
+    const fetchChats = async () => {
+      setLoadingChats(true);
+      setError(null);
+      try {
+        const res = await chatAPI.getChatRooms();
+        const rooms = (res.data.results || res.data || []).filter((room: any) => {
+          if (room.room_type !== 'admin') return false;
+          return true;
+        });
+        setChats(
+          rooms.map((room: any) => ({
+            id: room.id,
+            school: room.name,
+            admin: room.participants_info.find((p: any) => p.role.toLowerCase() === 'school admin')?.name || '',
+            lastMessage: room.last_message?.content || '',
+            lastMessageTime: room.last_message?.created_at || '',
+            unreadCount: room.unread_count || 0,
+            isActive: room.is_active,
+          }))
+        );
+      } catch (err) {
+        setError('Failed to load chats');
+      } finally {
+        setLoadingChats(false);
+      }
+    };
+    fetchChats();
+  }, []);
+
+  // Fetch messages for selected chat
+  useEffect(() => {
+    if (!selectedChat) return;
+    const fetchMessages = async () => {
+      setLoadingMessages(true);
+      setError(null);
+      try {
+        const res = await chatAPI.getMessages({ room: selectedChat.id });
+        setMessages(
+          (res.data.results || res.data || []).map((msg: any) => ({
+            id: msg.id,
+            sender: msg.sender_info?.name || '',
+            senderRole: msg.sender_info?.role || '',
+            content: msg.content,
+            timestamp: msg.created_at,
+            isRead: msg.is_read,
+          }))
+        );
+      } catch (err) {
+        setError('Failed to load messages');
+      } finally {
+        setLoadingMessages(false);
+      }
+    };
+    fetchMessages();
+  }, [selectedChat]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -114,32 +129,36 @@ const SystemChat: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (message.trim() && selectedChat) {
-      const newMessage: Message = {
-        id: messages.length + 1,
-        sender: 'System Administrator',
-        senderRole: 'Super Admin',
-        content: message.trim(),
-        timestamp: new Date().toISOString(),
-        isRead: false,
-      };
-      setMessages(prev => [...prev, newMessage]);
-      setMessage('');
-
-      // Update chat list
-      setChats(prev =>
-        prev.map(chat =>
-          chat.id === selectedChat.id
-            ? {
-                ...chat,
-                lastMessage: message.trim(),
-                lastMessageTime: new Date().toISOString(),
-                unreadCount: 0,
-              }
-            : chat
-        )
-      );
+      try {
+        console.log('Sending message:', { room: selectedChat.id, content: message.trim() });
+        const res = await chatAPI.sendMessage({ room: selectedChat.id, content: message.trim() });
+        console.log('Message API response:', res.data);
+        const msg = res.data;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: msg.id,
+            sender: msg.sender_info?.name || '',
+            senderRole: msg.sender_info?.role || '',
+            content: msg.content,
+            timestamp: msg.created_at,
+            isRead: msg.is_read,
+          },
+        ]);
+        setMessage('');
+        // Optionally update chat list last message
+        setChats(prev =>
+          prev.map(chat =>
+            chat.id === selectedChat.id
+              ? { ...chat, lastMessage: msg.content, lastMessageTime: msg.created_at }
+              : chat
+          )
+        );
+      } catch (err) {
+        setError('Failed to send message');
+      }
     }
   };
 
@@ -152,18 +171,88 @@ const SystemChat: React.FC = () => {
 
   const handleChatSelect = (chat: ChatSession) => {
     setSelectedChat(chat);
-    // Mark messages as read
-    setMessages(prev =>
-      prev.map(msg => ({ ...msg, isRead: true }))
-    );
-    // Update chat unread count
-    setChats(prev =>
-      prev.map(c =>
-        c.id === chat.id
-          ? { ...c, unreadCount: 0 }
-          : c
-      )
-    );
+    // Optionally, mark messages as read via API here
+  };
+
+  // Start or open chat with selected school admin or super admin
+  const handleStartChat = async (option: any) => {
+    setSearchTerm('');
+    setSearchResults([]);
+    setLoadingChats(true);
+    setError(null);
+    try {
+      let room: any = null;
+      // Find if a room already exists
+      const res = await chatAPI.getChatRooms();
+      const rooms = (res.data.results || res.data || []);
+      room = rooms.find((r: any) =>
+        r.room_type === 'admin' &&
+        r.participants_info.some((p: any) => p.role.toLowerCase() === 'school admin' && p.name === option.admin_name)
+      );
+      if (!room) {
+        // Create new room
+        let payload;
+        if (!option.admin_id || !currentUser?.id) {
+          setError('Could not find school admin or current user ID');
+          setLoadingChats(false);
+          return;
+        }
+        payload = {
+          name: option.name,
+          room_type: 'admin',
+          participants: [currentUser.id, option.admin_id],
+        };
+        const createRes = await chatAPI.createChatRoom(payload);
+        room = createRes.data;
+      }
+      // Add to chat list and select
+      setChats(prev => {
+        const exists = prev.find(c => c.id === room.id);
+        if (exists) return prev;
+        return [
+          {
+            id: room.id,
+            school: room.name,
+            admin: room.participants_info.find((p: any) => p.role.toLowerCase() === 'school admin')?.name || '',
+            lastMessage: room.last_message?.content || '',
+            lastMessageTime: room.last_message?.created_at || '',
+            unreadCount: room.unread_count || 0,
+            isActive: room.is_active,
+          },
+          ...prev,
+        ];
+      });
+      setSelectedChat({
+        id: room.id,
+        school: room.name,
+        admin: room.participants_info.find((p: any) => p.role.toLowerCase() === 'school admin')?.name || '',
+        lastMessage: room.last_message?.content || '',
+        lastMessageTime: room.last_message?.created_at || '',
+        unreadCount: room.unread_count || 0,
+        isActive: room.is_active,
+      });
+    } catch (err) {
+      setError('Failed to start chat');
+    } finally {
+      setLoadingChats(false);
+    }
+  };
+
+  // Search handler for chat participants
+  const handleSearch = async (searchTerm: string) => {
+    setSearchTerm(searchTerm);
+    setLoadingChats(true);
+    setError(null);
+    try {
+      let results = [];
+      const res = await schoolsAPI.searchSchools(searchTerm);
+      results = res.data.results || res.data || [];
+      setSearchResults(results);
+    } catch (err) {
+      setError('Failed to search.');
+    } finally {
+      setLoadingChats(false);
+    }
   };
 
   return (
@@ -175,7 +264,40 @@ const SystemChat: React.FC = () => {
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Chat with school administrators and provide support
       </Typography>
-
+      {/* Search Bar */}
+      <Autocomplete
+        freeSolo
+        options={searchResults}
+        getOptionLabel={option => option.name || ''}
+        loading={loadingChats}
+        onInputChange={(_, value) => {
+          setSearchTerm(value);
+          if (value.trim()) {
+            handleSearch(value);
+          } else {
+            setSearchResults([]);
+          }
+        }}
+        onChange={(_, value) => value && handleStartChat(value)}
+        renderInput={params => (
+          <TextField
+            {...params}
+            label={'Search Schools'}
+            variant="outlined"
+            size="small"
+            sx={{ mb: 2, width: 300 }}
+            InputProps={{
+              ...params.InputProps,
+              endAdornment: (
+                <>
+                  {loadingChats ? <CircularProgress color="inherit" size={20} /> : null}
+                  {params.InputProps.endAdornment}
+                </>
+              ),
+            }}
+          />
+        )}
+      />
       <Box sx={{ display: 'flex', height: 'calc(100vh - 200px)', gap: 2 }}>
         {/* Chat List */}
         <Card sx={{ width: 300, flexShrink: 0 }}>
@@ -296,6 +418,7 @@ const SystemChat: React.FC = () => {
                           <Typography variant="body2" sx={{ mb: 0.5 }}>
                             {msg.content}
                           </Typography>
+                          <Typography variant="caption" color="text.secondary">{msg.senderRole}</Typography>
                           <Typography variant="caption" sx={{ opacity: 0.7 }}>
                             {new Date(msg.timestamp).toLocaleTimeString()}
                           </Typography>

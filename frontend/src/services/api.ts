@@ -62,6 +62,7 @@ export const schoolsAPI = {
   getSchoolStats: () => api.get('/schools/schools/stats/'),
   getSchoolSubscriptions: (id: number) => api.get(`/schools/schools/${id}/subscriptions/`),
   getCurrentSubscription: (id: number) => api.get(`/schools/schools/${id}/current_subscription/`),
+  searchSchools: (query: string) => api.get('/schools/schools/', { params: { search: query } }),
 };
 
 // Subscriptions API
@@ -87,7 +88,7 @@ export const usersAPI = {
   deleteUser: (id: number) => api.delete(`/auth/users/${id}/`),
   getProfile: () => api.get('/auth/users/profile/'),
   updateProfile: (data: any) => api.put('/auth/users/update_profile/', data),
-  searchUsers: (query: string) => api.get('/auth/users/search/', { params: { q: query } }),
+  searchUsers: (query: string, role?: string) => api.get('/auth/users/search/', { params: { q: query, ...(role ? { role } : {}) } }),
 };
 
 // Teachers API
@@ -156,9 +157,10 @@ export const notificationsAPI = {
 
 // Chat API
 export const chatAPI = {
-  getMessages: (params?: any) => api.get('/chat/', { params }),
-  sendMessage: (data: any) => api.post('/chat/', data),
+  getMessages: (params?: any) => api.get('/chat/messages/', { params }),
+  sendMessage: (data: any) => api.post('/chat/messages/', data),
   getChatRooms: () => api.get('/chat/rooms/'),
+  createChatRoom: (data: any) => api.post('/chat/rooms/', data),
 };
 
 // System Settings API

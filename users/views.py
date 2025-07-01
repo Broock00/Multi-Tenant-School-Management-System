@@ -173,18 +173,19 @@ class UserViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def search(self, request):
-        """Search users"""
+        """Search users, optionally filter by role"""
         query = request.query_params.get('q', '')
+        role = request.query_params.get('role', None)
+        queryset = self.get_queryset()
         if query:
-            queryset = self.get_queryset().filter(
+            queryset = queryset.filter(
                 Q(first_name__icontains=query) |
                 Q(last_name__icontains=query) |
                 Q(username__icontains=query) |
                 Q(email__icontains=query)
             )
-        else:
-            queryset = self.get_queryset()
-        
+        if role:
+            queryset = queryset.filter(role=role)
         serializer = UserSerializer(queryset, many=True)
         return Response(serializer.data)
 

@@ -1,18 +1,25 @@
 from rest_framework import serializers
 from .models import School, Subscription, SubscriptionPlan
+from users.models import User
 
 
 class SchoolSerializer(serializers.ModelSerializer):
     """School serializer"""
     subscription_status = serializers.ReadOnlyField()
+    admin_id = serializers.SerializerMethodField()
     
+    def get_admin_id(self, obj):
+        admin = User.objects.filter(role=User.UserRole.SCHOOL_ADMIN, school=obj).first()
+        return admin.id if admin else None
+
     class Meta:
         model = School
         fields = [
             'id', 'name', 'code', 'address', 'phone', 'email', 'website',
             'principal_name', 'principal_email', 'principal_phone',
             'established_date', 'school_type', 'is_active', 'is_verified',
-            'subscription_status', 'created_at', 'updated_at'
+            'subscription_status', 'created_at', 'updated_at',
+            'admin_id',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -56,14 +63,20 @@ class SchoolWithSubscriptionSerializer(serializers.ModelSerializer):
     """School serializer with current subscription details"""
     current_subscription = SubscriptionSerializer(read_only=True)
     subscription_status = serializers.ReadOnlyField()
+    admin_id = serializers.SerializerMethodField()
     
+    def get_admin_id(self, obj):
+        admin = User.objects.filter(role=User.UserRole.SCHOOL_ADMIN, school=obj).first()
+        return admin.id if admin else None
+
     class Meta:
         model = School
         fields = [
             'id', 'name', 'code', 'address', 'phone', 'email', 'website',
             'principal_name', 'principal_email', 'principal_phone',
             'established_date', 'school_type', 'is_active', 'is_verified',
-            'current_subscription', 'subscription_status', 'created_at', 'updated_at'
+            'current_subscription', 'subscription_status', 'created_at', 'updated_at',
+            'admin_id',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

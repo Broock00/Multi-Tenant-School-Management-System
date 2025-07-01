@@ -84,15 +84,18 @@ class MessageViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter messages based on user role"""
+        """Filter messages based on user role and room"""
         user = self.request.user
-        
+        queryset = super().get_queryset()
+        room_id = self.request.query_params.get('room')
+        if room_id:
+            queryset = queryset.filter(room_id=room_id)
         if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
-            return Message.objects.all()
+            return queryset
         else:
             # Users can only see messages from rooms they're part of
             room_ids = user.chat_rooms.values_list('id', flat=True)
-            return Message.objects.filter(room_id__in=room_ids)
+            return queryset.filter(room_id__in=room_ids)
     
     def perform_create(self, serializer):
         """Set the sender when creating a message"""

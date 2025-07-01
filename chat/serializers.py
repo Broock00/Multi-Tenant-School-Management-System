@@ -2,10 +2,15 @@ from rest_framework import serializers
 from .models import ChatRoom, Message, Notification
 from core.models import SystemSettings
 from notifications.models import Announcement
+from users.models import User
+from .models import ChatParticipant
 
 
 class ChatRoomSerializer(serializers.ModelSerializer):
     """Chat room serializer"""
+    participants = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), many=True, write_only=True, required=True
+    )
     participants_info = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -13,19 +18,26 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatRoom
         fields = [
-            'id', 'name', 'room_type', 'class_obj', 'teacher', 'student', 'parent',
+            'id', 'name', 'room_type', 'class_obj',
             'participants', 'participants_info', 'last_message', 'unread_count',
-            'is_active', 'created_at', 'updated_at'
+            'is_active', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        participants = validated_data.pop('participants', [])
+        room = super().create(validated_data)
+        for user in participants:
+            ChatParticipant.objects.create(room=room, user=user)
+        return room
     
     def get_participants_info(self, obj):
         return [{
-            'id': user.id,
-            'name': user.get_full_name(),
-            'role': user.get_role_display(),
-            'profile_picture': user.profile_picture.url if user.profile_picture else None
-        } for user in obj.participants.all()]
+            'id': p.user.id,
+            'name': p.user.get_full_name(),
+            'role': p.user.get_role_display(),
+            'profile_picture': p.user.profile_picture.url if p.user.profile_picture else None
+        } for p in obj.participants.all()]
     
     def get_last_message(self, obj):
         last_message = obj.messages.order_by('-created_at').first()
@@ -41,9 +53,8 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     def get_unread_count(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            return obj.messages.filter(
-                is_read=False
-            ).exclude(sender=request.user).count()
+            # Messages not sent by the user and not read by the user
+            return obj.messages.exclude(sender=request.user).exclude(read_by__user=request.user).count()
         return 0
 
 
@@ -51,14 +62,15 @@ class MessageSerializer(serializers.ModelSerializer):
     """Message serializer"""
     sender_info = serializers.SerializerMethodField()
     room_info = serializers.SerializerMethodField()
+    is_read = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Message
         fields = [
             'id', 'room', 'room_info', 'sender', 'sender_info', 'content',
-            'attachment', 'is_read', 'created_at', 'updated_at'
+            'attachment', 'created_at', 'updated_at', 'is_read'
         ]
-        read_only_fields = ['id', 'sender', 'is_read', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'sender', 'created_at', 'updated_at']
     
     def get_sender_info(self, obj):
         return {
@@ -74,6 +86,12 @@ class MessageSerializer(serializers.ModelSerializer):
             'name': obj.room.name,
             'room_type': obj.room.room_type
         }
+
+    def get_is_read(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.read_by.filter(user=request.user).exists()
+        return False
 
     def validate_attachment(self, value):
         if value:
