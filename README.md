@@ -93,6 +93,7 @@ python manage.py createsuperuser
 #### Setup Demo Data (Optional)
 ```bash
 python manage.py setup_demo_user
+
 python manage.py setup_test_data
 ```
 
