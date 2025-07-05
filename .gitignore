@@ -3,3 +3,5 @@
 /frontend/build
 /node_modules
 debug.log
+*.pyc
+__pycache__/
