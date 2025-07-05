@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q, Count
+from django.db.models import Q
 from .models import Class, Subject, ClassSubject, ClassSchedule, Attendance, Assignment, AssignmentSubmission
 from .serializers import (
     ClassSerializer, SubjectSerializer, ClassScheduleSerializer, 
@@ -18,43 +18,34 @@ class ClassViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'section', 'academic_year', 'capacity', 'created_at']
     ordering = ['name', 'section']
     
-
-    
     def get_queryset(self):
-        """Filter classes based on user role and school"""
+        """Filter classes based on user role"""
         user = self.request.user
         
-        if user.role == user.UserRole.SUPER_ADMIN:
-            queryset = Class.objects.all()
-        elif user.role in [user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
-            queryset = Class.objects.filter(school=user.school)
+        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+            return Class.objects.all()
         elif user.role == user.UserRole.TEACHER:
             try:
                 teacher = user.teacher_profile
                 class_ids = teacher.subjects.values_list('class_obj_id', flat=True)
-                queryset = Class.objects.filter(id__in=class_ids, school=user.school)
+                return Class.objects.filter(id__in=class_ids)
             except:
-                queryset = Class.objects.none()
+                return Class.objects.none()
         elif user.role == user.UserRole.STUDENT:
             try:
                 student = user.student_profile
                 if student.current_class:
-                    queryset = Class.objects.filter(id=student.current_class.id, school=user.school)
-                else:
-                    queryset = Class.objects.none()
+                    return Class.objects.filter(id=student.current_class.id)
             except:
-                queryset = Class.objects.none()
-        else:
-            queryset = Class.objects.none()
-        
-        return queryset
+                pass
+        return Class.objects.none()
     
     @action(detail=True, methods=['get'])
     def students(self, request, pk=None):
         """Get students in this class"""
         class_obj = self.get_object()
-        from students.serializers import StudentSerializer
-        students = class_obj.enrolled_students.all()
+        from users.serializers import StudentSerializer
+        students = class_obj.students.all()
         serializer = StudentSerializer(students, many=True)
         return Response(serializer.data)
     
@@ -81,20 +72,22 @@ class ClassViewSet(viewsets.ModelViewSet):
             class_obj=class_obj,
             date__range=[start_date, end_date]
         ).values('student__user__first_name', 'student__user__last_name', 'status').annotate(
-            present_count=Count('id', filter=Q(status='present')),
-            absent_count=Count('id', filter=Q(status='absent')),
-            late_count=Count('id', filter=Q(status='late'))
+            present_count=models.Count('id', filter=models.Q(status='present')),
+            absent_count=models.Count('id', filter=models.Q(status='absent')),
+            late_count=models.Count('id', filter=models.Q(status='late'))
         )
         
         return Response(attendance_data)
 
     def perform_create(self, serializer):
         user = self.request.user
-        serializer.save(school=user.school)
+        school = getattr(user, 'school', None)
+        serializer.save(school=school)
 
     def perform_update(self, serializer):
         user = self.request.user
-        serializer.save(school=user.school)
+        school = getattr(user, 'school', None)
+        serializer.save(school=school)
 
 
 class SubjectViewSet(viewsets.ModelViewSet):

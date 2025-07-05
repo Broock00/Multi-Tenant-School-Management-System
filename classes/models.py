@@ -5,7 +5,7 @@ from schools.models import School
 
 class Class(models.Model):
     """Class/Grade model"""
-    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='classes', null=True, blank=True)
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='classes')
     name = models.CharField(max_length=50)  # e.g., "Class 10", "Grade 11"
     section = models.CharField(max_length=10, blank=True)  # e.g., "A", "B", "Science"
     academic_year = models.CharField(max_length=20)
@@ -15,7 +15,7 @@ class Class(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = ['name', 'section', 'academic_year', 'school']
+        unique_together = ['name', 'section', 'academic_year']
         verbose_name_plural = 'Classes'
         ordering = ['name', 'section']
     
@@ -24,7 +24,7 @@ class Class(models.Model):
     
     @property
     def current_students_count(self):
-        return self.enrolled_students.count()
+        return self.students.count()
     
     @property
     def is_full(self):

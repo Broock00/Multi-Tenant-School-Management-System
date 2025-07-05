@@ -135,7 +135,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 teacher = user.teacher_profile
                 student_ids = []
                 for subject in teacher.subjects.all():
-                    student_ids.extend(subject.class_obj.enrolled_students.values_list('user_id', flat=True))
+                    student_ids.extend(subject.class_obj.students.values_list('user_id', flat=True))
                 return User.objects.filter(id__in=student_ids, role=User.UserRole.STUDENT)
             except Teacher.DoesNotExist:
                 return User.objects.none()

@@ -270,7 +270,7 @@ class FeeReportViewSet(viewsets.ViewSet):
         class_data = []
         
         for class_obj in classes:
-            students = class_obj.enrolled_students.all()
+            students = class_obj.students.all()
             total_students = students.count()
             
             if total_students == 0:

@@ -7,28 +7,20 @@ class ClassSerializer(serializers.ModelSerializer):
     """Class serializer"""
     students_count = serializers.SerializerMethodField()
     subjects_count = serializers.SerializerMethodField()
-    school_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Class
         fields = [
-            'id', 'name', 'section', 'school', 'school_name', 'academic_year', 'capacity',
+            'id', 'name', 'section', 'school', 'academic_year', 'capacity',
             'students_count', 'subjects_count', 'is_active', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'school', 'school_name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_students_count(self, obj):
-        return obj.enrolled_students.count()
+        return obj.students.count()
     
     def get_subjects_count(self, obj):
         return obj.subjects.count()
-    
-    def get_school_name(self, obj):
-        return obj.school.name if obj.school else ''
-    
-
-    
-
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -76,7 +68,7 @@ class ClassScheduleSerializer(serializers.ModelSerializer):
         model = ClassSchedule
         fields = [
             'id', 'class_obj', 'subject', 'teacher', 'teacher_info',
-            'day', 'start_time', 'end_time', 'room', 'is_active',
+            'day_of_week', 'start_time', 'end_time', 'room', 'is_active',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
