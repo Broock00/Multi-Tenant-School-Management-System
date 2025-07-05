@@ -226,7 +226,7 @@ class DashboardSerializer(serializers.Serializer):
                     'department': teacher.department,
                     'subjects_count': teacher.subjects.count(),
                     'classes_teaching': teacher.subjects.count(),
-                    'students_count': sum([cs.class_obj.students.count() for cs in teacher.subjects.all()])
+                    'students_count': sum([cs.class_obj.enrolled_students.count() for cs in teacher.subjects.all()])
                 }
             except Teacher.DoesNotExist:
                 return {}
@@ -317,7 +317,7 @@ class DashboardSerializer(serializers.Serializer):
         """Get count of students taught by teacher"""
         try:
             teacher = user.teacher_profile
-            return sum([cs.class_obj.students.count() for cs in teacher.subjects.all()])
+            return sum([cs.class_obj.enrolled_students.count() for cs in teacher.subjects.all()])
         except Teacher.DoesNotExist:
             return 0
     

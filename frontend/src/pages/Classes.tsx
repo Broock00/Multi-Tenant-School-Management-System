@@ -13,6 +13,8 @@ interface ClassItem {
   id: number;
   name: string;
   section: string;
+  school: number;
+  school_name: string;
   academic_year: string;
   capacity: number;
   students_count: number;
@@ -31,7 +33,7 @@ interface ScheduleItem {
   id: number;
   subject: { name: string };
   teacher_info: { name: string } | null;
-  day_of_week: string;
+  day: string;
   start_time: string;
   end_time: string;
   room: string;
@@ -64,7 +66,9 @@ const Classes: React.FC = () => {
     setError('');
     try {
       const res = await classesAPI.getClasses();
-      setClasses(Array.isArray(res.data) ? res.data : []);
+      // Handle paginated response
+      const classesData = res.data.results || res.data;
+      setClasses(Array.isArray(classesData) ? classesData : []);
     } catch (err) {
       setError('Failed to load classes.');
       setClasses([]);
@@ -369,7 +373,7 @@ const Classes: React.FC = () => {
                     <TableRow key={sch.id}>
                       <TableCell>{sch.subject?.name}</TableCell>
                       <TableCell>{sch.teacher_info?.name || '-'}</TableCell>
-                      <TableCell>{sch.day_of_week}</TableCell>
+                      <TableCell>{sch.day}</TableCell>
                       <TableCell>{sch.start_time}</TableCell>
                       <TableCell>{sch.end_time}</TableCell>
                       <TableCell>{sch.room}</TableCell>
