@@ -311,9 +311,9 @@ const Students: React.FC = () => {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
-          Students Management
-        </Typography>
+      <Typography variant="h4" gutterBottom>
+        Students Management
+      </Typography>
         {canManage && (
           <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
             Add Student
@@ -587,4 +587,4 @@ const Students: React.FC = () => {
   );
 };
 
-export default Students;
+export default Students; 

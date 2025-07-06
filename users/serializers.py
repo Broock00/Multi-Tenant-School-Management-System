@@ -75,6 +75,12 @@ class UserSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         password = validated_data.pop('password', None)
+        
+        # Get the current user's school and set it for the new user
+        request = self.context.get('request')
+        if request and request.user and request.user.school:
+            validated_data['school'] = request.user.school
+        
         user = super().create(validated_data)
         if password:
             user.set_password(password)
@@ -104,19 +110,73 @@ class TeacherSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     user_id = serializers.IntegerField(write_only=True)
     subjects = serializers.SerializerMethodField()
+    subjects_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
     
     class Meta:
         model = Teacher
         fields = [
             'id', 'user', 'user_id', 'employee_id', 'department', 'qualification',
-            'experience_years', 'subjects', 'is_head_teacher',
+            'experience_years', 'subjects', 'subjects_ids', 'is_head_teacher',
             'can_manage_students', 'can_manage_attendance', 'can_manage_grades',
             'can_send_notifications', 'can_view_reports'
         ]
     
+    def validate_employee_id(self, value):
+        """Validate employee_id uniqueness"""
+        if Teacher.objects.filter(employee_id=value).exists():
+            if self.instance and self.instance.employee_id == value:
+                return value  # Same teacher, allow update
+            raise serializers.ValidationError("Employee ID already exists.")
+        return value
+    
     def get_subjects(self, obj):
         return [{'id': subject.id, 'name': subject.name, 'code': subject.code} 
                 for subject in obj.subjects.all()]
+    
+    def create(self, validated_data):
+        subjects_ids = validated_data.pop('subjects_ids', [])
+        
+        # Get the current user's school and set it for the teacher's user
+        request = self.context.get('request')
+        if request and request.user and request.user.school:
+            user_id = validated_data.get('user_id')
+            if user_id:
+                from users.models import User
+                try:
+                    user = User.objects.get(id=user_id)
+                    user.school = request.user.school
+                    user.save()
+                except User.DoesNotExist:
+                    pass
+        
+        # Create the teacher
+        teacher = super().create(validated_data)
+        
+        # Ensure the teacher's user has the correct school
+        if request and request.user and request.user.school:
+            teacher.user.school = request.user.school
+            teacher.user.save()
+        
+        # Set subjects if provided
+        if subjects_ids:
+            from classes.models import Subject
+            subjects = Subject.objects.filter(id__in=subjects_ids)
+            teacher.subjects.set(subjects)
+        
+        return teacher
+    
+    def update(self, instance, validated_data):
+        subjects_ids = validated_data.pop('subjects_ids', None)
+        teacher = super().update(instance, validated_data)
+        if subjects_ids is not None:
+            from classes.models import Subject
+            subjects = Subject.objects.filter(id__in=subjects_ids)
+            teacher.subjects.set(subjects)
+        return teacher
 
 
 class PrincipalSerializer(serializers.ModelSerializer):

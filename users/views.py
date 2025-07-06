@@ -3,6 +3,7 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.db.models import Q, Count, Sum
@@ -106,7 +107,6 @@ class UserViewSet(viewsets.ModelViewSet):
     """User management viewset"""
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
     ordering_fields = ['username', 'first_name', 'last_name', 'email', 'role', 'created_at']
     ordering = ['-created_at', 'username']
     
@@ -221,26 +221,65 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+class TeacherPagination(PageNumberPagination):
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class TeacherViewSet(viewsets.ModelViewSet):
     """Teacher management viewset"""
     queryset = Teacher.objects.all()
     serializer_class = TeacherSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = TeacherPagination
     ordering_fields = ['user__username', 'user__first_name', 'user__last_name', 'department', 'employee_id']
     ordering = ['user__first_name', 'user__last_name']
     
     def get_queryset(self):
-        """Filter teachers based on user role"""
+        """Filter teachers based on user role and various filters"""
         user = self.request.user
         
         if user.role == User.UserRole.SUPER_ADMIN:
-            return Teacher.objects.all()
+            queryset = Teacher.objects.all()
         elif user.role in [User.UserRole.SCHOOL_ADMIN, User.UserRole.PRINCIPAL]:
-            return Teacher.objects.filter(user__school=user.school)
+            queryset = Teacher.objects.filter(user__school=user.school)
         elif user.role == User.UserRole.TEACHER:
-            return Teacher.objects.filter(user=user)
+            queryset = Teacher.objects.filter(user=user)
         else:
             return Teacher.objects.none()
+        
+        # Filter by department if provided
+        department = self.request.query_params.get('department')
+        if department:
+            queryset = queryset.filter(department=department)
+        
+        # Filter by qualification if provided
+        qualification = self.request.query_params.get('qualification')
+        if qualification:
+            queryset = queryset.filter(qualification=qualification)
+        
+        # Filter by subject if provided
+        subject = self.request.query_params.get('subject')
+        if subject:
+            try:
+                subject_id = int(subject)
+                queryset = queryset.filter(subjects__id=subject_id)
+            except (ValueError, TypeError):
+                pass
+        
+        # Search functionality
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(employee_id__icontains=search) |
+                Q(department__icontains=search) |
+                Q(qualification__icontains=search)
+            )
+        
+        return queryset.distinct()
     
     @action(detail=True, methods=['get'])
     def students(self, request, pk=None):
@@ -268,13 +307,40 @@ class TeacherViewSet(viewsets.ModelViewSet):
         
         serializer = ClassSerializer(class_objects, many=True)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def departments(self, request):
+        """Get list of departments for filtering"""
+        user = request.user
+        
+        if user.role == User.UserRole.SUPER_ADMIN:
+            departments = Teacher.objects.values_list('department', flat=True).distinct()
+        elif user.role in [User.UserRole.SCHOOL_ADMIN, User.UserRole.PRINCIPAL]:
+            departments = Teacher.objects.filter(user__school=user.school).values_list('department', flat=True).distinct()
+        else:
+            departments = []
+        
+        return Response({'departments': list(departments)})
+    
+    @action(detail=False, methods=['get'])
+    def qualifications(self, request):
+        """Get list of qualifications for filtering"""
+        user = request.user
+        
+        if user.role == User.UserRole.SUPER_ADMIN:
+            qualifications = Teacher.objects.values_list('qualification', flat=True).distinct()
+        elif user.role in [User.UserRole.SCHOOL_ADMIN, User.UserRole.PRINCIPAL]:
+            qualifications = Teacher.objects.filter(user__school=user.school).values_list('qualification', flat=True).distinct()
+        else:
+            qualifications = []
+        
+        return Response({'qualifications': list(qualifications)})
 
 
 class PrincipalViewSet(viewsets.ModelViewSet):
     """Principal management viewset"""
     queryset = Principal.objects.all()
     serializer_class = PrincipalSerializer
-    permission_classes = [permissions.IsAuthenticated]
     ordering_fields = ['user__username', 'user__first_name', 'user__last_name', 'employee_id']
     ordering = ['user__first_name', 'user__last_name']
     
@@ -340,7 +406,6 @@ class AccountantViewSet(viewsets.ModelViewSet):
     """Accountant management viewset"""
     queryset = Accountant.objects.all()
     serializer_class = AccountantSerializer
-    permission_classes = [permissions.IsAuthenticated]
     ordering_fields = ['user__username', 'user__first_name', 'user__last_name', 'employee_id', 'department']
     ordering = ['user__first_name', 'user__last_name']
     

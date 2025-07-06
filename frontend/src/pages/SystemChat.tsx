@@ -147,15 +147,15 @@ const SystemChat: React.FC = () => {
             isRead: msg.is_read,
           },
         ]);
-        setMessage('');
+      setMessage('');
         // Optionally update chat list last message
-        setChats(prev =>
-          prev.map(chat =>
-            chat.id === selectedChat.id
+      setChats(prev =>
+        prev.map(chat =>
+          chat.id === selectedChat.id
               ? { ...chat, lastMessage: msg.content, lastMessageTime: msg.created_at }
-              : chat
-          )
-        );
+            : chat
+        )
+      );
       } catch (err) {
         setError('Failed to send message');
       }
@@ -188,7 +188,7 @@ const SystemChat: React.FC = () => {
       room = rooms.find((r: any) =>
         r.room_type === 'admin' &&
         r.participants_info.some((p: any) => p.role.toLowerCase() === 'school admin' && p.name === option.admin_name)
-      );
+    );
       if (!room) {
         // Create new room
         let payload;

@@ -28,6 +28,7 @@ import {
   Payment as PaymentIcon,
   Class as ClassIcon,
   Refresh as RefreshIcon,
+  Assignment as AssignmentIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -85,6 +86,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { text: 'Students', icon: <PeopleIcon />, path: '/students' },
           { text: 'Teachers', icon: <PeopleIcon />, path: '/teachers' },
           { text: 'Classes', icon: <ClassIcon />, path: '/classes' },
+          { text: 'Class Assignments', icon: <AssignmentIcon />, path: '/class-assignments' },
           { text: 'Exams', icon: <AssessmentIcon />, path: '/exams' },
           { text: 'Fees', icon: <PaymentIcon />, path: '/fees' },
           { text: 'Chat', icon: <ChatIcon />, path: '/chat' },

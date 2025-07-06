@@ -522,71 +522,71 @@ const Dashboard: React.FC = () => {
         ) : (
           // Default cards for super admin and others
           <>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography color="text.secondary" gutterBottom variant="body2">
-                      Total Schools
-                    </Typography>
-                    <Typography variant="h4" component="div">
-                      {stats.totalSchools}
-                    </Typography>
-                  </Box>
-                  <School sx={{ fontSize: 40, color: 'primary.main' }} />
-                </Box>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography color="text.secondary" gutterBottom variant="body2">
-                      Total Users
-                    </Typography>
-                    <Typography variant="h4" component="div">
-                      {stats.totalUsers}
-                    </Typography>
-                  </Box>
-                  <People sx={{ fontSize: 40, color: 'success.main' }} />
-                </Box>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography color="text.secondary" gutterBottom variant="body2">
-                      Active Subscriptions
-                    </Typography>
-                    <Typography variant="h4" component="div">
-                      {stats.activeSubscriptions}
-                    </Typography>
-                  </Box>
-                  <Payment sx={{ fontSize: 40, color: 'warning.main' }} />
-                </Box>
-              </CardContent>
-            </Card>
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography color="text.secondary" gutterBottom variant="body2">
+                  Total Schools
+                </Typography>
+                <Typography variant="h4" component="div">
+                  {stats.totalSchools}
+                </Typography>
+              </Box>
+              <School sx={{ fontSize: 40, color: 'primary.main' }} />
+            </Box>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography color="text.secondary" gutterBottom variant="body2">
+                  Total Users
+                </Typography>
+                <Typography variant="h4" component="div">
+                  {stats.totalUsers}
+                </Typography>
+              </Box>
+              <People sx={{ fontSize: 40, color: 'success.main' }} />
+            </Box>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography color="text.secondary" gutterBottom variant="body2">
+                  Active Subscriptions
+                </Typography>
+                <Typography variant="h4" component="div">
+                  {stats.activeSubscriptions}
+                </Typography>
+              </Box>
+              <Payment sx={{ fontSize: 40, color: 'warning.main' }} />
+            </Box>
+          </CardContent>
+        </Card>
             {/* System Health Card */}
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography color="text.secondary" gutterBottom variant="body2">
-                      System Health
-                    </Typography>
-                    <Typography variant="h4" component="div">
-                      <Chip
-                        label={stats.systemHealth}
-                        color={getHealthColor(stats.systemHealth) as any}
-                        size="small"
-                      />
-                    </Typography>
-                  </Box>
-                  <CheckCircle sx={{ fontSize: 40, color: 'success.main' }} />
-                </Box>
-              </CardContent>
-            </Card>
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography color="text.secondary" gutterBottom variant="body2">
+                  System Health
+                </Typography>
+                <Typography variant="h4" component="div">
+                  <Chip
+                    label={stats.systemHealth}
+                    color={getHealthColor(stats.systemHealth) as any}
+                    size="small"
+                  />
+                </Typography>
+              </Box>
+              <CheckCircle sx={{ fontSize: 40, color: 'success.main' }} />
+            </Box>
+          </CardContent>
+        </Card>
           </>
         )}
       </Box>

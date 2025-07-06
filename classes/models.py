@@ -15,7 +15,7 @@ class Class(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = ['name', 'section', 'academic_year']
+        unique_together = ['name', 'section', 'academic_year', 'school']
         verbose_name_plural = 'Classes'
         ordering = ['name', 'section']
     
@@ -24,7 +24,7 @@ class Class(models.Model):
     
     @property
     def current_students_count(self):
-        return self.students.count()
+        return self.enrolled_students.count()
     
     @property
     def is_full(self):

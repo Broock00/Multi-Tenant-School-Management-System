@@ -100,6 +100,8 @@ export const teachersAPI = {
   deleteTeacher: (id: number) => api.delete(`/auth/teachers/${id}/`),
   getTeacherStudents: (id: number) => api.get(`/auth/teachers/${id}/students/`),
   getTeacherClasses: (id: number) => api.get(`/auth/teachers/${id}/classes/`),
+  getDepartments: () => api.get('/auth/teachers/departments/'),
+  getQualifications: () => api.get('/auth/teachers/qualifications/'),
 };
 
 // Students API
@@ -124,6 +126,28 @@ export const classesAPI = {
   deleteClass: (id: number) => api.delete(`/classes/${id}/`),
   getClassStudents: (id: number) => api.get(`/classes/${id}/students/`),
   getClassSchedule: (id: number) => api.get(`/classes/${id}/schedule/`),
+  autoGenerateClasses: (targetYear: string) => api.post('/classes/auto_generate/', { target_year: targetYear }),
+  getAcademicYears: () => api.get('/classes/academic_years/'),
+};
+
+// Subjects API
+export const subjectsAPI = {
+  getSubjects: (params?: any) => api.get('/classes/subjects/', { params }),
+  getSubject: (id: number) => api.get(`/classes/subjects/${id}/`),
+  createSubject: (data: any) => api.post('/classes/subjects/', data),
+  updateSubject: (id: number, data: any) => api.put(`/classes/subjects/${id}/`, data),
+  deleteSubject: (id: number) => api.delete(`/classes/subjects/${id}/`),
+};
+
+// Class Subjects API
+export const classSubjectsAPI = {
+  getClassSubjects: (params?: any) => api.get('/classes/class-subjects/', { params }),
+  getClassSubject: (id: number) => api.get(`/classes/class-subjects/${id}/`),
+  createClassSubject: (data: any) => api.post('/classes/class-subjects/', data),
+  updateClassSubject: (id: number, data: any) => api.put(`/classes/class-subjects/${id}/`, data),
+  deleteClassSubject: (id: number) => api.delete(`/classes/class-subjects/${id}/`),
+  getByClass: (classId: number) => api.get('/classes/class-subjects/by_class/', { params: { class_id: classId } }),
+  getByTeacher: (teacherId: number) => api.get('/classes/class-subjects/by_teacher/', { params: { teacher_id: teacherId } }),
 };
 
 // Fees API

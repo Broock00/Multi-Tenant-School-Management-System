@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import Teachers from './pages/Teachers';
 import Classes from './pages/Classes';
+import ClassAssignments from './pages/ClassAssignments';
 import Fees from './pages/Fees';
 import Exams from './pages/Exams';
 import Chat from './pages/Chat';
@@ -177,6 +178,18 @@ function App() {
                     <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher']}>
                       <Layout>
                         <Classes />
+                      </Layout>
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/class-assignments"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal']}>
+                      <Layout>
+                        <ClassAssignments />
                       </Layout>
                     </RoleRoute>
                   </ProtectedRoute>

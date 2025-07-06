@@ -1,26 +1,31 @@
 from rest_framework import serializers
 from .models import Class, Subject, ClassSubject, ClassSchedule, Attendance, Assignment, AssignmentSubmission
 from core.models import SystemSettings
+from users.models import Teacher
 
 
 class ClassSerializer(serializers.ModelSerializer):
     """Class serializer"""
     students_count = serializers.SerializerMethodField()
     subjects_count = serializers.SerializerMethodField()
+    school_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Class
         fields = [
-            'id', 'name', 'section', 'school', 'academic_year', 'capacity',
+            'id', 'name', 'section', 'school', 'school_name', 'academic_year', 'capacity',
             'students_count', 'subjects_count', 'is_active', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'school', 'school_name', 'created_at', 'updated_at']
     
     def get_students_count(self, obj):
-        return obj.students.count()
+        return obj.enrolled_students.count()
     
     def get_subjects_count(self, obj):
         return obj.subjects.count()
+    
+    def get_school_name(self, obj):
+        return obj.school.name if obj.school else ''
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -28,10 +33,10 @@ class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
         fields = [
-            'id', 'name', 'code', 'description', 'credits', 'is_active',
-            'created_at', 'updated_at'
+            'id', 'name', 'code', 'description', 'is_core', 'is_active',
+            'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at']
 
 
 class ClassSubjectSerializer(serializers.ModelSerializer):
@@ -39,14 +44,17 @@ class ClassSubjectSerializer(serializers.ModelSerializer):
     class_obj = ClassSerializer(read_only=True)
     subject = SubjectSerializer(read_only=True)
     teacher_info = serializers.SerializerMethodField()
+    class_obj_id = serializers.IntegerField(write_only=True)
+    subject_id = serializers.IntegerField(write_only=True)
+    teacher_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = ClassSubject
         fields = [
-            'id', 'class_obj', 'subject', 'teacher', 'teacher_info',
-            'is_active', 'created_at', 'updated_at'
+            'id', 'class_obj', 'class_obj_id', 'subject', 'subject_id', 
+            'teacher', 'teacher_id', 'teacher_info', 'is_compulsory', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at']
     
     def get_teacher_info(self, obj):
         if obj.teacher:
@@ -56,6 +64,32 @@ class ClassSubjectSerializer(serializers.ModelSerializer):
                 'employee_id': obj.teacher.employee_id
             }
         return None
+    
+    def create(self, validated_data):
+        class_obj_id = validated_data.pop('class_obj_id')
+        subject_id = validated_data.pop('subject_id')
+        teacher_id = validated_data.pop('teacher_id', None)
+        
+        class_obj = Class.objects.get(id=class_obj_id)
+        subject = Subject.objects.get(id=subject_id)
+        teacher = None
+        if teacher_id:
+            teacher = Teacher.objects.get(id=teacher_id)
+        
+        class_subject, created = ClassSubject.objects.get_or_create(
+            class_obj=class_obj,
+            subject=subject,
+            defaults={
+                'teacher': teacher,
+                'is_compulsory': validated_data.get('is_compulsory', True)
+            }
+        )
+        
+        if not created and teacher:
+            class_subject.teacher = teacher
+            class_subject.save()
+        
+        return class_subject
 
 
 class ClassScheduleSerializer(serializers.ModelSerializer):
@@ -68,7 +102,7 @@ class ClassScheduleSerializer(serializers.ModelSerializer):
         model = ClassSchedule
         fields = [
             'id', 'class_obj', 'subject', 'teacher', 'teacher_info',
-            'day_of_week', 'start_time', 'end_time', 'room', 'is_active',
+            'day', 'start_time', 'end_time', 'room', 'is_active',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
