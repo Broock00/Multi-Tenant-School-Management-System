@@ -19,7 +19,6 @@ def test_schools_api():
         if not superuser:
             print("No superuser found")
             return
-        
         print(f"Testing with superuser: {superuser.username}")
         
         # Create a token for the superuser
@@ -45,7 +44,6 @@ def test_schools_api():
             print(f"Response: {json.dumps(data, indent=2)[:500]}...")
         else:
             print(f"Error Response: {response.text}")
-            
     except Exception as e:
         print(f"Exception occurred: {e}")
         import traceback
