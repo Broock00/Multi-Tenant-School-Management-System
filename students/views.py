@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 from .models import Student
 from .serializers import StudentSerializer, StudentListSerializer
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -41,17 +41,69 @@ class StudentViewSet(viewsets.ModelViewSet):
             return StudentListSerializer
         return StudentSerializer
     
+    def check_student_permissions(self, user, student=None, class_id=None):
+        """Check if user has permission to create/update students"""
+        if user.role == 'super_admin':
+            return True
+        elif user.role in ['school_admin', 'secretary']:
+            # School admins and secretaries can manage all students in their school
+            if student and student.school != user.school:
+                raise PermissionDenied("You can only manage students in your school.")
+            return True
+        elif user.role == 'teacher' and user.is_head_teacher:
+            # Head teachers can only manage students in their assigned classes
+            if class_id:
+                if not user.head_teacher_classes.filter(id=class_id).exists():
+                    raise PermissionDenied("You can only manage students in classes where you are the head teacher.")
+            elif student:
+                if not user.head_teacher_classes.filter(id=student.current_class.id).exists():
+                    raise PermissionDenied("You can only manage students in classes where you are the head teacher.")
+            return True
+        else:
+            raise PermissionDenied("You don't have permission to manage students.")
+    
     def perform_create(self, serializer):
-        """Set the school based on the current user and enforce plan student limit"""
+        """Set the school based on the current user and enforce permissions"""
         user = self.request.user
         school = user.school
+        
+        # Check subscription limits
         plan = school.current_subscription.plan if school and school.current_subscription else None
         if plan and school.students.count() >= plan.max_students:
             raise ValidationError("Student limit reached for your subscription plan.")
+        
+        # Check permissions
+        class_id = serializer.validated_data.get('current_class')
+        if class_id:
+            self.check_student_permissions(user, class_id=class_id.id)
+        else:
+            self.check_student_permissions(user)
+        
+        # Save with appropriate school
         if user.role in ['school_admin', 'secretary']:
             serializer.save(school=user.school)
         else:
             serializer.save()
+    
+    def perform_update(self, serializer):
+        """Enforce permissions for updating students"""
+        user = self.request.user
+        student = serializer.instance
+        
+        # Check permissions
+        class_id = serializer.validated_data.get('current_class')
+        if class_id:
+            self.check_student_permissions(user, student, class_id=class_id.id)
+        else:
+            self.check_student_permissions(user, student)
+        
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """Enforce permissions for deleting students"""
+        user = self.request.user
+        self.check_student_permissions(user, instance)
+        instance.delete()
     
     @action(detail=False, methods=['get'])
     def my_profile(self, request):

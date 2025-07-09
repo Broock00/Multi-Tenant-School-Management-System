@@ -81,6 +81,7 @@ class Teacher(models.Model):
     experience_years = models.PositiveIntegerField(default=0)
     subjects = models.ManyToManyField('classes.Subject', blank=True)
     is_head_teacher = models.BooleanField(default=False)
+    head_teacher_classes = models.ManyToManyField('classes.Class', blank=True, related_name='head_teachers')
     
     # Dashboard permissions
     can_manage_students = models.BooleanField(default=True)

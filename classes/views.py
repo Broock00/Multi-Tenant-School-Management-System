@@ -9,6 +9,7 @@ from .serializers import (
     ClassSerializer, SubjectSerializer, ClassSubjectSerializer, ClassScheduleSerializer, 
     AttendanceSerializer, AssignmentSerializer, AssignmentSubmissionSerializer
 )
+from rest_framework.exceptions import PermissionDenied
 
 
 class ClassPagination(PageNumberPagination):
@@ -301,16 +302,26 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         """Filter attendance based on user role"""
         user = self.request.user
         
-        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+        if user.role == 'super_admin':
             return Attendance.objects.all()
-        elif user.role == user.UserRole.TEACHER:
+        elif user.role in ['school_admin', 'secretary']:
+            return Attendance.objects.filter(class_obj__school=user.school)
+        elif user.role == 'teacher':
             try:
                 teacher = user.teacher_profile
-                class_ids = teacher.subjects.values_list('class_obj_id', flat=True)
-                return Attendance.objects.filter(class_obj_id__in=class_ids)
+                if teacher.is_head_teacher:
+                    # Head teachers can see attendance for their assigned classes
+                    return Attendance.objects.filter(
+                        class_obj__in=teacher.head_teacher_classes.all(),
+                        class_obj__school=user.school
+                    )
+                else:
+                    # Regular teachers can see attendance for classes they teach
+                    class_ids = teacher.subjects.values_list('class_obj_id', flat=True)
+                    return Attendance.objects.filter(class_obj_id__in=class_ids)
             except:
                 return Attendance.objects.none()
-        elif user.role == user.UserRole.STUDENT:
+        elif user.role == 'student':
             try:
                 student = user.student_profile
                 return Attendance.objects.filter(student=student)
@@ -318,13 +329,73 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                 return Attendance.objects.none()
         return Attendance.objects.none()
     
+    def check_attendance_permissions(self, user, class_id=None):
+        """Check if user has permission to mark attendance"""
+        if user.role == 'super_admin':
+            return True
+        elif user.role in ['school_admin', 'secretary']:
+            # School admins and secretaries can mark attendance for all classes in their school
+            if class_id:
+                from classes.models import Class
+                try:
+                    class_obj = Class.objects.get(id=class_id)
+                    if class_obj.school != user.school:
+                        raise PermissionDenied("You can only mark attendance for classes in your school.")
+                except Class.DoesNotExist:
+                    raise PermissionDenied("Class not found.")
+            return True
+        elif user.role == 'teacher':
+            try:
+                teacher = user.teacher_profile
+                if teacher.is_head_teacher:
+                    # Head teachers can only mark attendance for their assigned classes
+                    if class_id:
+                        if not teacher.head_teacher_classes.filter(id=class_id).exists():
+                            raise PermissionDenied("You can only mark attendance for classes where you are the head teacher.")
+                    return True
+                else:
+                    raise PermissionDenied("Only head teachers can mark attendance.")
+            except:
+                raise PermissionDenied("Teacher profile not found.")
+        else:
+            raise PermissionDenied("You don't have permission to mark attendance.")
+    
+    def perform_create(self, serializer):
+        """Enforce permissions for creating attendance"""
+        user = self.request.user
+        class_id = serializer.validated_data.get('class_obj')
+        if class_id:
+            self.check_attendance_permissions(user, class_id=class_id.id)
+        else:
+            self.check_attendance_permissions(user)
+        serializer.save(marked_by=user)
+    
+    def perform_update(self, serializer):
+        """Enforce permissions for updating attendance"""
+        user = self.request.user
+        class_id = serializer.validated_data.get('class_obj')
+        if class_id:
+            self.check_attendance_permissions(user, class_id=class_id.id)
+        else:
+            self.check_attendance_permissions(user)
+        serializer.save(marked_by=user)
+    
+    def perform_destroy(self, instance):
+        """Enforce permissions for deleting attendance"""
+        user = self.request.user
+        self.check_attendance_permissions(user, class_id=instance.class_obj.id)
+        instance.delete()
+    
     @action(detail=False, methods=['post'])
     def bulk_mark(self, request):
         """Bulk mark attendance for a class"""
         user = request.user
-        if user.role != user.UserRole.TEACHER:
-            return Response({'error': 'Only teachers can mark attendance'}, 
-                          status=status.HTTP_403_FORBIDDEN)
+        
+        # Check permissions
+        try:
+            self.check_attendance_permissions(user, class_id=request.data.get('class_id'))
+        except PermissionDenied as e:
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
         
         class_id = request.data.get('class_id')
         date = request.data.get('date')
@@ -375,15 +446,25 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         """Filter assignments based on user role"""
         user = self.request.user
         
-        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+        if user.role == 'super_admin':
             return Assignment.objects.all()
-        elif user.role == user.UserRole.TEACHER:
+        elif user.role in ['school_admin', 'secretary']:
+            return Assignment.objects.filter(class_obj__school=user.school)
+        elif user.role == 'teacher':
             try:
                 teacher = user.teacher_profile
-                return Assignment.objects.filter(teacher=teacher)
+                if teacher.is_head_teacher:
+                    # Head teachers can see assignments for their assigned classes
+                    return Assignment.objects.filter(
+                        class_obj__in=teacher.head_teacher_classes.all(),
+                        class_obj__school=user.school
+                    )
+                else:
+                    # Regular teachers can see assignments they created
+                    return Assignment.objects.filter(teacher=teacher)
             except:
                 return Assignment.objects.none()
-        elif user.role == user.UserRole.STUDENT:
+        elif user.role == 'student':
             try:
                 student = user.student_profile
                 if student.current_class:
@@ -391,6 +472,63 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             except:
                 return Assignment.objects.none()
         return Assignment.objects.none()
+    
+    def check_assignment_permissions(self, user, class_id=None):
+        """Check if user has permission to manage assignments"""
+        if user.role == 'super_admin':
+            return True
+        elif user.role in ['school_admin', 'secretary']:
+            # School admins and secretaries can manage assignments for all classes in their school
+            if class_id:
+                from classes.models import Class
+                try:
+                    class_obj = Class.objects.get(id=class_id)
+                    if class_obj.school != user.school:
+                        raise PermissionDenied("You can only manage assignments for classes in your school.")
+                except Class.DoesNotExist:
+                    raise PermissionDenied("Class not found.")
+            return True
+        elif user.role == 'teacher':
+            try:
+                teacher = user.teacher_profile
+                if teacher.is_head_teacher:
+                    # Head teachers can only manage assignments for their assigned classes
+                    if class_id:
+                        if not teacher.head_teacher_classes.filter(id=class_id).exists():
+                            raise PermissionDenied("You can only manage assignments for classes where you are the head teacher.")
+                    return True
+                else:
+                    raise PermissionDenied("Only head teachers can manage assignments.")
+            except:
+                raise PermissionDenied("Teacher profile not found.")
+        else:
+            raise PermissionDenied("You don't have permission to manage assignments.")
+    
+    def perform_create(self, serializer):
+        """Enforce permissions for creating assignments"""
+        user = self.request.user
+        class_id = serializer.validated_data.get('class_obj')
+        if class_id:
+            self.check_assignment_permissions(user, class_id=class_id.id)
+        else:
+            self.check_assignment_permissions(user)
+        serializer.save(teacher=user.teacher_profile)
+    
+    def perform_update(self, serializer):
+        """Enforce permissions for updating assignments"""
+        user = self.request.user
+        class_id = serializer.validated_data.get('class_obj')
+        if class_id:
+            self.check_assignment_permissions(user, class_id=class_id.id)
+        else:
+            self.check_assignment_permissions(user)
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """Enforce permissions for deleting assignments"""
+        user = self.request.user
+        self.check_assignment_permissions(user, class_id=instance.class_obj.id)
+        instance.delete()
     
     @action(detail=True, methods=['get'])
     def submissions(self, request, pk=None):
@@ -410,15 +548,25 @@ class AssignmentSubmissionViewSet(viewsets.ModelViewSet):
         """Filter submissions based on user role"""
         user = self.request.user
         
-        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+        if user.role == 'super_admin':
             return AssignmentSubmission.objects.all()
-        elif user.role == user.UserRole.TEACHER:
+        elif user.role in ['school_admin', 'secretary']:
+            return AssignmentSubmission.objects.filter(assignment__class_obj__school=user.school)
+        elif user.role == 'teacher':
             try:
                 teacher = user.teacher_profile
-                return AssignmentSubmission.objects.filter(assignment__teacher=teacher)
+                if teacher.is_head_teacher:
+                    # Head teachers can see submissions for their assigned classes
+                    return AssignmentSubmission.objects.filter(
+                        assignment__class_obj__in=teacher.head_teacher_classes.all(),
+                        assignment__class_obj__school=user.school
+                    )
+                else:
+                    # Regular teachers can see submissions for assignments they created
+                    return AssignmentSubmission.objects.filter(assignment__teacher=teacher)
             except:
                 return AssignmentSubmission.objects.none()
-        elif user.role == user.UserRole.STUDENT:
+        elif user.role == 'student':
             try:
                 student = user.student_profile
                 return AssignmentSubmission.objects.filter(student=student)
@@ -426,15 +574,80 @@ class AssignmentSubmissionViewSet(viewsets.ModelViewSet):
                 return AssignmentSubmission.objects.none()
         return AssignmentSubmission.objects.none()
     
+    def check_submission_permissions(self, user, assignment_id=None):
+        """Check if user has permission to grade submissions"""
+        if user.role == 'super_admin':
+            return True
+        elif user.role in ['school_admin', 'secretary']:
+            # School admins and secretaries can grade submissions for all classes in their school
+            if assignment_id:
+                from classes.models import Assignment
+                try:
+                    assignment = Assignment.objects.get(id=assignment_id)
+                    if assignment.class_obj.school != user.school:
+                        raise PermissionDenied("You can only grade submissions for classes in your school.")
+                except Assignment.DoesNotExist:
+                    raise PermissionDenied("Assignment not found.")
+            return True
+        elif user.role == 'teacher':
+            try:
+                teacher = user.teacher_profile
+                if teacher.is_head_teacher:
+                    # Head teachers can only grade submissions for their assigned classes
+                    if assignment_id:
+                        from classes.models import Assignment
+                        try:
+                            assignment = Assignment.objects.get(id=assignment_id)
+                            if not teacher.head_teacher_classes.filter(id=assignment.class_obj.id).exists():
+                                raise PermissionDenied("You can only grade submissions for classes where you are the head teacher.")
+                        except Assignment.DoesNotExist:
+                            raise PermissionDenied("Assignment not found.")
+                    return True
+                else:
+                    raise PermissionDenied("Only head teachers can grade submissions.")
+            except:
+                raise PermissionDenied("Teacher profile not found.")
+        else:
+            raise PermissionDenied("You don't have permission to grade submissions.")
+    
+    def perform_create(self, serializer):
+        """Enforce permissions for creating submissions"""
+        user = self.request.user
+        assignment_id = serializer.validated_data.get('assignment')
+        if assignment_id:
+            self.check_submission_permissions(user, assignment_id=assignment_id.id)
+        else:
+            self.check_submission_permissions(user)
+        serializer.save()
+    
+    def perform_update(self, serializer):
+        """Enforce permissions for updating submissions"""
+        user = self.request.user
+        assignment_id = serializer.validated_data.get('assignment')
+        if assignment_id:
+            self.check_submission_permissions(user, assignment_id=assignment_id.id)
+        else:
+            self.check_submission_permissions(user)
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        """Enforce permissions for deleting submissions"""
+        user = self.request.user
+        self.check_submission_permissions(user, assignment_id=instance.assignment.id)
+        instance.delete()
+    
     @action(detail=True, methods=['post'])
     def grade(self, request, pk=None):
         """Grade an assignment submission"""
         user = request.user
-        if user.role != user.UserRole.TEACHER:
-            return Response({'error': 'Only teachers can grade assignments'}, 
-                          status=status.HTTP_403_FORBIDDEN)
         
-        submission = self.get_object()
+        # Check permissions
+        try:
+            submission = self.get_object()
+            self.check_submission_permissions(user, assignment_id=submission.assignment.id)
+        except PermissionDenied as e:
+            return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        
         marks_obtained = request.data.get('marks_obtained')
         feedback = request.data.get('feedback', '')
         
@@ -444,7 +657,7 @@ class AssignmentSubmissionViewSet(viewsets.ModelViewSet):
         
         submission.marks_obtained = marks_obtained
         submission.feedback = feedback
-        submission.graded_by = user
+        submission.graded_by = user.teacher_profile
         submission.save()
         
         serializer = AssignmentSubmissionSerializer(submission)

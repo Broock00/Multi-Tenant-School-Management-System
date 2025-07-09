@@ -7,7 +7,7 @@ import {
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Group, School, Person, Email, Phone, Search, Clear } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { teachersAPI, usersAPI, subjectsAPI, classSubjectsAPI } from '../services/api';
+import { teachersAPI, usersAPI, subjectsAPI, classSubjectsAPI, classesAPI } from '../services/api';
 import Pagination from '@mui/material/Pagination';
 
 interface TeacherItem {
@@ -31,6 +31,12 @@ interface TeacherItem {
     code: string;
   }>;
   is_head_teacher: boolean;
+  head_teacher_classes_details: Array<{
+    id: number;
+    name: string;
+    section: string;
+    academic_year: string;
+  }>;
   can_manage_students: boolean;
   can_manage_attendance: boolean;
   can_manage_grades: boolean;
@@ -93,6 +99,7 @@ const initialForm = {
   qualification: '',
   experience_years: 0,
   is_head_teacher: false,
+  head_teacher_classes_details: [] as Array<{id: number; name: string; section: string; academic_year: string}>,
   can_manage_students: true,
   can_manage_attendance: true,
   can_manage_grades: true,
@@ -128,10 +135,13 @@ const Teachers: React.FC = () => {
   // State for filtering
   const [departmentFilter, setDepartmentFilter] = useState<string>('');
   const [qualificationFilter, setQualificationFilter] = useState<string>('');
-  const [subjectFilter, setSubjectFilter] = useState<string>('');
+  const [subjectFilter, setSubjectFilter] = useState<number | ''>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [departments, setDepartments] = useState<string[]>([]);
   const [qualifications, setQualifications] = useState<string[]>([]);
+  
+  // Add state for head teacher filter
+  const [headTeacherFilter, setHeadTeacherFilter] = useState<'all' | 'head' | 'regular'>('all');
   
   // Debounce search
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -140,6 +150,11 @@ const Teachers: React.FC = () => {
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
+  
+  // State for classes (for head teacher assignment)
+  const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<number[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
   
   // State for dialogs
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -168,35 +183,22 @@ const Teachers: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const params: any = { page: pageNum, page_size: pageSize };
-      if (departmentFilter) {
-        params.department = departmentFilter;
-      }
-      if (qualificationFilter) {
-        params.qualification = qualificationFilter;
-      }
-      if (subjectFilter) {
-        params.subject = subjectFilter;
-      }
-      if (searchQuery) {
-        params.search = searchQuery;
-      }
-      
+      const params: any = {
+        page: pageNum,
+        page_size: pageSize,
+        department: departmentFilter || undefined,
+        qualification: qualificationFilter || undefined,
+        subject: subjectFilter || undefined,
+        search: searchQuery || undefined,
+      };
+      if (headTeacherFilter === 'head') params.is_head_teacher = true;
+      if (headTeacherFilter === 'regular') params.is_head_teacher = false;
       const res = await teachersAPI.getTeachers(params);
-      const teachersData = res.data.results || res.data;
-      const teachersArray = Array.isArray(teachersData) ? teachersData : [];
-      
-      setTeachers(teachersArray);
-      
-      // Update pagination info
-      if (res.data.count !== undefined) {
-        setTotalCount(res.data.count);
-        setTotalPages(Math.ceil(res.data.count / pageSize));
-      }
-      setPage(pageNum);
-    } catch (err) {
-      console.error('Error fetching teachers:', err);
-      setError('Failed to fetch teachers.');
+      setTeachers(res.data.results || res.data);
+      setTotalCount(res.data.count || res.data.length || 0);
+      setTotalPages(res.data.total_pages || Math.ceil((res.data.count || res.data.length || 0) / pageSize));
+    } catch (err: any) {
+      setError('Error fetching teachers: ' + (err?.message || ''));
     } finally {
       setLoading(false);
     }
@@ -234,6 +236,20 @@ const Teachers: React.FC = () => {
     }
   };
 
+  const fetchClasses = async () => {
+    setClassesLoading(true);
+    try {
+      const res = await classesAPI.getClasses();
+      const classesData = res.data.results || res.data;
+      const classesArray = Array.isArray(classesData) ? classesData : [];
+      setClasses(classesArray);
+    } catch (err) {
+      console.error('Error fetching classes:', err);
+    } finally {
+      setClassesLoading(false);
+    }
+  };
+
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
     setPage(value);
     fetchTeachers(value);
@@ -242,19 +258,16 @@ const Teachers: React.FC = () => {
   const handleDepartmentFilterChange = (department: string) => {
     setDepartmentFilter(department);
     setPage(1);
-    fetchTeachers(1);
   };
 
   const handleQualificationFilterChange = (qualification: string) => {
     setQualificationFilter(qualification);
     setPage(1);
-    fetchTeachers(1);
   };
 
-  const handleSubjectFilterChange = (subject: string) => {
-    setSubjectFilter(subject);
+  const handleSubjectFilterChange = (subject: string | number) => {
+    setSubjectFilter(subject === '' ? '' : Number(subject));
     setPage(1);
-    fetchTeachers(1);
   };
 
   const handleSearchChange = (query: string) => {
@@ -268,21 +281,20 @@ const Teachers: React.FC = () => {
     
     // Set new timeout for debounced search
     const newTimeout = setTimeout(() => {
-      fetchTeachers(1);
+      // fetchTeachers(1); // Remove direct call
     }, 300); // 300ms delay
     
     setSearchTimeout(newTimeout);
   };
 
   const clearFilters = () => {
-    // Clear all filters
     setDepartmentFilter('');
     setQualificationFilter('');
     setSubjectFilter('');
     setSearchQuery('');
-    setPage(1);
+    setHeadTeacherFilter('all');
     
-    // Clear any pending search timeout
+    // Clear search timeout if it exists
     if (searchTimeout) {
       clearTimeout(searchTimeout);
       setSearchTimeout(null);
@@ -301,6 +313,7 @@ const Teachers: React.FC = () => {
         qualification: teacher.qualification,
         experience_years: teacher.experience_years,
         is_head_teacher: teacher.is_head_teacher,
+        head_teacher_classes_details: teacher.head_teacher_classes_details,
         can_manage_students: teacher.can_manage_students,
         can_manage_attendance: teacher.can_manage_attendance,
         can_manage_grades: teacher.can_manage_grades,
@@ -317,12 +330,14 @@ const Teachers: React.FC = () => {
         role: 'teacher',
       });
       setSelectedSubjects(teacher.subjects.map(s => s.id));
+      setSelectedClasses(teacher.head_teacher_classes_details.map(c => c.id));
       setEditingId(teacher.id);
       setCreateUserMode(false);
     } else {
       setForm(initialForm);
       setUserForm(initialUserForm);
       setSelectedSubjects([]);
+      setSelectedClasses([]);
       setEditingId(null);
       setCreateUserMode(true);
     }
@@ -335,6 +350,7 @@ const Teachers: React.FC = () => {
     setForm(initialForm);
     setUserForm(initialUserForm);
     setSelectedSubjects([]);
+    setSelectedClasses([]);
     setCreateUserMode(false);
     setError(''); // Clear any previous errors
   };
@@ -350,10 +366,21 @@ const Teachers: React.FC = () => {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    // Validate head teacher class assignment
+    if (form.is_head_teacher && selectedClasses.length === 0) {
+      setError('Head teachers must be assigned to at least one class.');
+      return;
+    }
+    
     try {
       if (editingId) {
         // Update existing teacher
-        const teacherData = { ...form, subjects_ids: selectedSubjects };
+        const teacherData = { 
+          ...form, 
+          subjects_ids: selectedSubjects,
+          head_teacher_classes_ids: selectedClasses
+        };
         await teachersAPI.updateTeacher(editingId, teacherData);
       } else {
         // Create new teacher
@@ -361,10 +388,19 @@ const Teachers: React.FC = () => {
           // Create user first, then teacher
           const userRes = await usersAPI.createUser(userForm);
           const newUser = userRes.data;
-          const teacherData = { ...form, user_id: newUser.id, subjects_ids: selectedSubjects };
+          const teacherData = { 
+            ...form, 
+            user_id: newUser.id, 
+            subjects_ids: selectedSubjects,
+            head_teacher_classes_ids: selectedClasses
+          };
           await teachersAPI.createTeacher(teacherData);
         } else {
-          const teacherData = { ...form, subjects_ids: selectedSubjects };
+          const teacherData = { 
+            ...form, 
+            subjects_ids: selectedSubjects,
+            head_teacher_classes_ids: selectedClasses
+          };
           await teachersAPI.createTeacher(teacherData);
         }
       }
@@ -373,6 +409,7 @@ const Teachers: React.FC = () => {
       setForm(initialForm);
       setUserForm(initialUserForm);
       setSelectedSubjects([]);
+      setSelectedClasses([]);
       setCreateUserMode(false);
       setEditingId(null);
       setDialogOpen(false);
@@ -444,7 +481,13 @@ const Teachers: React.FC = () => {
     fetchDepartments();
     fetchQualifications();
     fetchSubjects();
+    fetchClasses(); // Fetch classes for head teacher assignment
   }, []);
+
+  useEffect(() => {
+    fetchTeachers(1);
+    // eslint-disable-next-line
+  }, [departmentFilter, qualificationFilter, subjectFilter, searchQuery, headTeacherFilter]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -557,9 +600,23 @@ const Teachers: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+
+            {/* Head Teacher Filter */}
+            <FormControl sx={{ minWidth: 180 }} size="small">
+              <InputLabel>Head Teacher Status</InputLabel>
+              <Select
+                value={headTeacherFilter}
+                label="Head Teacher Status"
+                onChange={e => setHeadTeacherFilter(e.target.value as 'all' | 'head' | 'regular')}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="head">Head Teachers</MenuItem>
+                <MenuItem value="regular">Regular Teachers</MenuItem>
+              </Select>
+            </FormControl>
             
             {/* Clear Filters Button */}
-            {(departmentFilter || qualificationFilter || subjectFilter || searchQuery) && (
+            {(departmentFilter || qualificationFilter || subjectFilter || searchQuery || headTeacherFilter !== 'all') && (
               <Button
                 variant="outlined"
                 onClick={clearFilters}
@@ -592,6 +649,7 @@ const Teachers: React.FC = () => {
                       <TableCell>Qualification</TableCell>
                       <TableCell>Experience</TableCell>
                       <TableCell>Subjects</TableCell>
+                      <TableCell>Head Teacher</TableCell>
                       <TableCell>Status</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
@@ -622,6 +680,43 @@ const Teachers: React.FC = () => {
                               <Chip label={`+${teacher.subjects.length - 2} more`} size="small" variant="outlined" />
                             )}
                           </Box>
+                        </TableCell>
+                        <TableCell>
+                          {teacher.is_head_teacher ? (
+                            <Box>
+                              <Chip 
+                                label="Head Teacher" 
+                                color="primary" 
+                                size="small" 
+                                sx={{ mb: 1 }}
+                              />
+                              {teacher.head_teacher_classes_details.length > 0 && (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                  {teacher.head_teacher_classes_details.slice(0, 2).map(classItem => (
+                                    <Chip 
+                                      key={classItem.id} 
+                                      label={`${classItem.name}-${classItem.section}`} 
+                                      size="small" 
+                                      variant="outlined"
+                                      color="secondary"
+                                    />
+                                  ))}
+                                  {teacher.head_teacher_classes_details.length > 2 && (
+                                    <Chip 
+                                      label={`+${teacher.head_teacher_classes_details.length - 2} more`} 
+                                      size="small" 
+                                      variant="outlined"
+                                      color="secondary"
+                                    />
+                                  )}
+                                </Box>
+                              )}
+                            </Box>
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">
+                              Regular Teacher
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Chip 
@@ -858,6 +953,47 @@ const Teachers: React.FC = () => {
                       }
                       label="Head Teacher"
                     />
+                    {form.is_head_teacher && (
+                      <Grid item xs={12} {...({ item: true } as any)}>
+                        <Box sx={{ mt: 2, mb: 2 }}>
+                          <Typography variant="subtitle1" gutterBottom>
+                            Head Teacher Classes
+                          </Typography>
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Select Classes</InputLabel>
+                            <Select
+                              multiple
+                              value={selectedClasses}
+                              onChange={(e) => setSelectedClasses(e.target.value as number[])}
+                              label="Select Classes"
+                              renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                  {selected.map((value) => {
+                                    const classItem = classes.find(c => c.id === value);
+                                    return (
+                                      <Chip key={value} label={`${classItem?.name} - ${classItem?.section}`} size="small" />
+                                    );
+                                  })}
+                                </Box>
+                              )}
+                            >
+                              {classesLoading ? (
+                                <MenuItem disabled>Loading classes...</MenuItem>
+                              ) : (
+                                classes.map((classItem) => (
+                                  <MenuItem key={classItem.id} value={classItem.id}>
+                                    {classItem.name} - {classItem.section} ({classItem.academic_year})
+                                  </MenuItem>
+                                ))
+                              )}
+                            </Select>
+                          </FormControl>
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                            Head teachers must be assigned to at least one class to manage students, attendance, and grades.
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    )}
                     <FormControlLabel
                       control={
                         <Checkbox

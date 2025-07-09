@@ -3,12 +3,6 @@ import {
   Box,
   Typography,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Button,
   Dialog,
   DialogTitle,
@@ -35,7 +29,6 @@ import {
 import {
   Add as AddIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon,
   School as SchoolIcon,
   Person as PersonIcon,
   Book as BookIcon,
@@ -90,10 +83,15 @@ const ClassAssignments: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Filter state
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [availableYears, setAvailableYears] = useState<string[]>([]);
+  
   // Dialog states
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedClassSubject, setSelectedClassSubject] = useState<ClassSubject | null>(null);
+  const [selectedClassForAssignment, setSelectedClassForAssignment] = useState<Class | null>(null);
   
   // Form states
   const [selectedClass, setSelectedClass] = useState<number | ''>('');
@@ -115,16 +113,30 @@ const ClassAssignments: React.FC = () => {
         classSubjectsAPI.getClassSubjects()
       ]);
       
-      setClasses(classesRes.data.results || classesRes.data);
+      const classesData = classesRes.data.results || classesRes.data;
+      setClasses(classesData);
       setSubjects(subjectsRes.data.results || subjectsRes.data);
       setTeachers(teachersRes.data.results || teachersRes.data);
       setClassSubjects(classSubjectsRes.data.results || classSubjectsRes.data);
+      
+      // Extract available years and set default to latest
+      const allYears = classesData.map((cls: Class) => cls.academic_year);
+      const years = allYears.filter((year: string, index: number) => allYears.indexOf(year) === index).sort().reverse();
+      setAvailableYears(years);
+      if (years.length > 0 && !selectedYear) {
+        setSelectedYear(years[0]); // Set to latest year by default
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
   };
+
+  // Filter classes by selected year
+  const filteredClasses = classes.filter(cls => 
+    selectedYear ? cls.academic_year === selectedYear : true
+  );
 
   const handleAssignTeacher = async () => {
     if (!selectedClass || selectedSubjects.length === 0) {
@@ -174,22 +186,9 @@ const ClassAssignments: React.FC = () => {
     }
   };
 
-  const handleDeleteAssignment = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this assignment?')) return;
-
-    try {
-      setLoading(true);
-      await classSubjectsAPI.deleteClassSubject(id);
-      await fetchData();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete assignment');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenAssignDialog = () => {
-    setSelectedClass('');
+  const handleOpenAssignDialog = (classItem: Class) => {
+    setSelectedClassForAssignment(classItem);
+    setSelectedClass(classItem.id);
     setSelectedSubjects([]);
     setSelectedTeacher('');
     setIsCompulsory(true);
@@ -198,6 +197,7 @@ const ClassAssignments: React.FC = () => {
 
   const handleCloseAssignDialog = () => {
     setAssignDialogOpen(false);
+    setSelectedClassForAssignment(null);
     setError(null);
   };
 
@@ -220,6 +220,11 @@ const ClassAssignments: React.FC = () => {
     return classSubjects.filter(cs => cs.class_obj.id === classId);
   };
 
+  const getUnassignedSubjectsForClass = (classId: number) => {
+    const assignedSubjectIds = getClassSubjectsByClass(classId).map(cs => cs.subject.id);
+    return subjects.filter(subject => !assignedSubjectIds.includes(subject.id));
+  };
+
   if (loading && classSubjects.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -234,13 +239,23 @@ const ClassAssignments: React.FC = () => {
         <Typography variant="h4" component="h1">
           Class Assignments
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleOpenAssignDialog}
-        >
-          Assign Teacher
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <FormControl sx={{ minWidth: 150 }} size="small">
+            <InputLabel>Academic Year</InputLabel>
+            <Select
+              value={selectedYear}
+              label="Academic Year"
+              onChange={(e) => setSelectedYear(e.target.value)}
+            >
+              <MenuItem value="">All Years</MenuItem>
+              {availableYears.map((year) => (
+                <MenuItem key={year} value={year}>
+                  {year}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
       </Box>
 
       {error && (
@@ -250,60 +265,63 @@ const ClassAssignments: React.FC = () => {
       )}
 
       <Grid container spacing={3}>
-        {classes.map((classItem) => (
-          <Grid key={classItem.id} xs={12} md={6} lg={4} {...({ item: true } as any)}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={2}>
-                  <SchoolIcon sx={{ mr: 1, color: 'primary.main' }} />
-                  <Typography variant="h6">
-                    {classItem.name} - {classItem.section}
+        {filteredClasses.map((classItem) => {
+          const classAssignments = getClassSubjectsByClass(classItem.id);
+          const unassignedSubjects = getUnassignedSubjectsForClass(classItem.id);
+          
+          return (
+            <Grid key={classItem.id} xs={12} md={6} lg={4} {...({ item: true } as any)}>
+              <Card>
+                <CardContent>
+                  <Box display="flex" alignItems="center" mb={2}>
+                    <SchoolIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6">
+                      {classItem.name} - {classItem.section}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary" mb={2}>
+                    {classItem.academic_year} • {classItem.school_name}
                   </Typography>
-                </Box>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                  {classItem.academic_year} • {classItem.school_name}
-                </Typography>
-                
-                <Divider sx={{ my: 2 }} />
-                
-                <Typography variant="subtitle2" mb={1}>
-                  Subject Assignments:
-                </Typography>
-                
-                {getClassSubjectsByClass(classItem.id).length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    No subjects assigned
+                  
+                  <Divider sx={{ my: 2 }} />
+                  
+                  <Typography variant="subtitle2" mb={1}>
+                    Subject Assignments:
                   </Typography>
-                ) : (
-                  <Box>
-                    {getClassSubjectsByClass(classItem.id).map((cs) => (
-                      <Box key={cs.id} display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Box>
-                          <Chip
-                            label={cs.subject.name}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            sx={{ mr: 1 }}
-                          />
-                          {cs.teacher_info ? (
+                  
+                  {classAssignments.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" mb={2}>
+                      No subjects assigned
+                    </Typography>
+                  ) : (
+                    <Box mb={2}>
+                      {classAssignments.map((cs) => (
+                        <Box key={cs.id} display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                          <Box>
                             <Chip
-                              label={cs.teacher_info.name}
+                              label={cs.subject.name}
                               size="small"
-                              color="secondary"
+                              color="primary"
                               variant="outlined"
+                              sx={{ mr: 1 }}
                             />
-                          ) : (
-                            <Chip
-                              label="No teacher"
-                              size="small"
-                              color="default"
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-                        <Box>
-                          <Tooltip title="Edit">
+                            {cs.teacher_info ? (
+                              <Chip
+                                label={cs.teacher_info.name}
+                                size="small"
+                                color="secondary"
+                                variant="outlined"
+                              />
+                            ) : (
+                              <Chip
+                                label="No teacher"
+                                size="small"
+                                color="default"
+                                variant="outlined"
+                              />
+                            )}
+                          </Box>
+                          <Tooltip title="Edit Assignment">
                             <IconButton
                               size="small"
                               onClick={() => handleOpenEditDialog(cs)}
@@ -311,46 +329,61 @@ const ClassAssignments: React.FC = () => {
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleDeleteAssignment(cs.id)}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
                         </Box>
+                      ))}
+                    </Box>
+                  )}
+                  
+                  {unassignedSubjects.length > 0 && (
+                    <Box>
+                      <Typography variant="subtitle2" mb={1} color="text.secondary">
+                        Available subjects to assign:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                        {unassignedSubjects.slice(0, 3).map((subject) => (
+                          <Chip
+                            key={subject.id}
+                            label={subject.name}
+                            size="small"
+                            variant="outlined"
+                            color="default"
+                          />
+                        ))}
+                        {unassignedSubjects.length > 3 && (
+                          <Chip
+                            label={`+${unassignedSubjects.length - 3} more`}
+                            size="small"
+                            variant="outlined"
+                            color="default"
+                          />
+                        )}
                       </Box>
-                    ))}
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
+                    </Box>
+                  )}
+                </CardContent>
+                <CardActions>
+                  <Button
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={() => handleOpenAssignDialog(classItem)}
+                    disabled={unassignedSubjects.length === 0}
+                  >
+                    Assign Subject
+                  </Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          );
+        })}
       </Grid>
 
       {/* Assign Teacher Dialog */}
       <Dialog open={assignDialogOpen} onClose={handleCloseAssignDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Assign Teacher to Class</DialogTitle>
+        <DialogTitle>
+          Assign Teacher to {selectedClassForAssignment?.name} - {selectedClassForAssignment?.section}
+        </DialogTitle>
         <DialogContent>
           <FormControl fullWidth sx={{ mb: 2, mt: 1 }}>
-            <InputLabel>Class</InputLabel>
-            <Select
-              value={selectedClass}
-              onChange={(e) => setSelectedClass(e.target.value as number)}
-              label="Class"
-            >
-              {classes.map((classItem) => (
-                <MenuItem key={classItem.id} value={classItem.id}>
-                  {classItem.name} - {classItem.section} ({classItem.academic_year})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Subjects</InputLabel>
             <Select
               multiple
@@ -368,7 +401,7 @@ const ClassAssignments: React.FC = () => {
                 </Box>
               )}
             >
-              {subjects.map((subject) => (
+              {selectedClassForAssignment && getUnassignedSubjectsForClass(selectedClassForAssignment.id).map((subject) => (
                 <MenuItem key={subject.id} value={subject.id}>
                   {subject.name} ({subject.code})
                 </MenuItem>
@@ -449,11 +482,11 @@ const ClassAssignments: React.FC = () => {
           </FormControl>
 
           <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Teacher</InputLabel>
+            <InputLabel>Teacher (Optional)</InputLabel>
             <Select
               value={selectedTeacher}
               onChange={(e) => setSelectedTeacher(e.target.value as number)}
-              label="Teacher"
+              label="Teacher (Optional)"
             >
               <MenuItem value="">
                 <em>No teacher assigned</em>

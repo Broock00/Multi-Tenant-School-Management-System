@@ -5,6 +5,7 @@ from schools.models import School, Subscription
 from core.models import SystemSettings
 from django.utils import timezone
 from users.models import User
+from classes.models import Class
 
 
 class SchoolSerializer(serializers.ModelSerializer):
@@ -115,15 +116,47 @@ class TeacherSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    head_teacher_classes = serializers.PrimaryKeyRelatedField(
+        queryset=Class.objects.all(),
+        many=True,
+        required=False
+    )
+    head_teacher_classes_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
+    head_teacher_classes_details = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Teacher
         fields = [
             'id', 'user', 'user_id', 'employee_id', 'department', 'qualification',
             'experience_years', 'subjects', 'subjects_ids', 'is_head_teacher',
+            'head_teacher_classes', 'head_teacher_classes_ids', 'head_teacher_classes_details',
             'can_manage_students', 'can_manage_attendance', 'can_manage_grades',
             'can_send_notifications', 'can_view_reports'
         ]
+    
+    def validate(self, data):
+        # Handle head_teacher_classes_ids if provided
+        head_teacher_classes_ids = data.pop('head_teacher_classes_ids', None)
+        if head_teacher_classes_ids is not None:
+            from classes.models import Class
+            classes = Class.objects.filter(id__in=head_teacher_classes_ids)
+            data['head_teacher_classes'] = classes
+        
+        # If is_head_teacher is set, require at least one class
+        if data.get('is_head_teacher'):
+            if not data.get('head_teacher_classes'):
+                raise serializers.ValidationError("Head teacher must be assigned to at least one class.")
+            # Optionally, force all permissions to True
+            data['can_manage_students'] = True
+            data['can_manage_attendance'] = True
+            data['can_manage_grades'] = True
+            data['can_send_notifications'] = True
+            data['can_view_reports'] = True
+        return data
     
     def validate_employee_id(self, value):
         """Validate employee_id uniqueness"""
@@ -137,8 +170,21 @@ class TeacherSerializer(serializers.ModelSerializer):
         return [{'id': subject.id, 'name': subject.name, 'code': subject.code} 
                 for subject in obj.subjects.all()]
     
+    def get_head_teacher_classes_details(self, obj):
+        return [
+            {
+                'id': c.id,
+                'name': c.name,
+                'section': c.section,
+                'academic_year': c.academic_year,
+                'school': c.school.id if c.school else None
+            }
+            for c in obj.head_teacher_classes.all()
+        ]
+    
     def create(self, validated_data):
         subjects_ids = validated_data.pop('subjects_ids', [])
+        head_teacher_classes_ids = validated_data.pop('head_teacher_classes_ids', [])
         
         # Get the current user's school and set it for the teacher's user
         request = self.context.get('request')
@@ -167,15 +213,30 @@ class TeacherSerializer(serializers.ModelSerializer):
             subjects = Subject.objects.filter(id__in=subjects_ids)
             teacher.subjects.set(subjects)
         
+        # Set head teacher classes if provided
+        if head_teacher_classes_ids:
+            from classes.models import Class
+            classes = Class.objects.filter(id__in=head_teacher_classes_ids)
+            teacher.head_teacher_classes.set(classes)
+        
         return teacher
     
     def update(self, instance, validated_data):
         subjects_ids = validated_data.pop('subjects_ids', None)
+        head_teacher_classes_ids = validated_data.pop('head_teacher_classes_ids', None)
+        
         teacher = super().update(instance, validated_data)
+        
         if subjects_ids is not None:
             from classes.models import Subject
             subjects = Subject.objects.filter(id__in=subjects_ids)
             teacher.subjects.set(subjects)
+        
+        if head_teacher_classes_ids is not None:
+            from classes.models import Class
+            classes = Class.objects.filter(id__in=head_teacher_classes_ids)
+            teacher.head_teacher_classes.set(classes)
+        
         return teacher
 
 

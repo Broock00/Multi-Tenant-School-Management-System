@@ -267,6 +267,14 @@ class TeacherViewSet(viewsets.ModelViewSet):
             except (ValueError, TypeError):
                 pass
         
+        # Filter by is_head_teacher if provided
+        is_head_teacher = self.request.query_params.get('is_head_teacher')
+        if is_head_teacher is not None:
+            if is_head_teacher.lower() == 'true':
+                queryset = queryset.filter(is_head_teacher=True)
+            elif is_head_teacher.lower() == 'false':
+                queryset = queryset.filter(is_head_teacher=False)
+        
         # Search functionality
         search = self.request.query_params.get('search')
         if search:
