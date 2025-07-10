@@ -68,7 +68,6 @@ const Schools: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     name: '',
-    code: '',
     address: '',
     phone: '',
     email: '',
@@ -81,6 +80,17 @@ const Schools: React.FC = () => {
   const [sortDirection, setSortDirection] = useState('asc');
   const [page, setPage] = useState(1);
   const SCHOOLS_PER_PAGE = 15;
+
+  // Function to generate school code (for display purposes only)
+  const generateSchoolCode = (schoolName: string): string => {
+    if (!schoolName) return 'Enter school name';
+    
+    // Take the first letter of each word and convert to uppercase
+    const words = schoolName.match(/\b\w+/g) || [];
+    const baseCode = words.map(word => word[0].toUpperCase()).join('');
+    
+    return baseCode || 'Enter school name';
+  };
 
   useEffect(() => {
     fetchSchools();
@@ -172,7 +182,6 @@ const Schools: React.FC = () => {
       setEditingSchool(school);
       setFormData({
         name: school.name,
-        code: school.code,
         address: school.address,
         phone: school.phone,
         email: school.email,
@@ -185,7 +194,6 @@ const Schools: React.FC = () => {
       setEditingSchool(null);
       setFormData({
         name: '',
-        code: '',
         address: '',
         phone: '',
         email: '',
@@ -208,6 +216,10 @@ const Schools: React.FC = () => {
       setError('Principal phone is required.');
       return;
     }
+    if (!formData.name.trim()) {
+      setError('School name is required.');
+      return;
+    }
     try {
       // Debug: Check if user is authenticated
       const token = localStorage.getItem('access_token');
@@ -216,9 +228,12 @@ const Schools: React.FC = () => {
       
       if (editingSchool) {
         console.log('DEBUG: Updating school:', editingSchool.id);
-        await schoolsAPI.updateSchool(editingSchool.id, formData);
+        // For updates, we need to include the existing code
+        const updateData = { ...formData, code: editingSchool.code };
+        await schoolsAPI.updateSchool(editingSchool.id, updateData);
       } else {
         console.log('DEBUG: Creating new school');
+        // For new schools, don't send code - it will be auto-generated
         await schoolsAPI.createSchool(formData);
       }
       fetchSchools();
@@ -412,7 +427,7 @@ const Schools: React.FC = () => {
       {/* Add/Edit School Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>
-          {editingSchool ? 'Edit School' : 'Add New School'}
+          {editingSchool ? 'Edit School' : 'Add New School (Code Auto-Generated)'}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 1 }}>
@@ -423,13 +438,16 @@ const Schools: React.FC = () => {
               fullWidth
               required
             />
-            <TextField
-              label="School Code"
-              value={formData.code}
-              onChange={(e) => handleInputChange('code', e.target.value)}
-              fullWidth
-              required
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Generated Code:
+              </Typography>
+              <Chip 
+                label={formData.name ? generateSchoolCode(formData.name) : 'Enter school name'} 
+                color="primary" 
+                size="small"
+              />
+            </Box>
             <TextField
               label="Address"
               value={formData.address}
@@ -478,6 +496,7 @@ const Schools: React.FC = () => {
               fullWidth
               type="email"
               sx={{ gridColumn: '1 / -1' }}
+              required
             />
           </Box>
         </DialogContent>

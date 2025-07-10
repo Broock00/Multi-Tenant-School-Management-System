@@ -28,9 +28,14 @@ import {
   Select,
   Checkbox,
   FormControlLabel,
+  Stepper,
+  Step,
+  StepLabel,
+  InputAdornment,
+  IconButton as MuiIconButton,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
-import { Add, Edit, Delete, Search } from '@mui/icons-material';
+import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons-material';
 import { studentsAPI, classesAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import dayjs from 'dayjs';
@@ -44,16 +49,29 @@ interface Student {
     email: string;
   };
   student_id: string;
-  current_class?: { name: string; section: string } | null;
+  current_class?: { id: number; name: string; section: string; academic_year: string } | null;
   academic_status: string;
   payment_status: 'paid' | 'pending';
+}
+
+interface Class {
+  id: number;
+  name: string;
+  section: string;
+  academic_year: string;
+  school: number;
+  school_name: string;
+  capacity: number;
+  students_count: number;
+  subjects_count: number;
+  is_active: boolean;
 }
 
 interface StudentFormData {
   first_name: string;
   last_name: string;
   email: string;
-  current_class_id: string;
+  current_class_id: number | null;
   section: string;
   year: string;
   date_of_birth: string;
@@ -70,6 +88,12 @@ interface StudentFormData {
   notes: string;
 }
 
+interface CredentialsData {
+  username: string;
+  password: string;
+  showPassword: boolean;
+}
+
 const currentYear = dayjs().year();
 const years = Array.from({ length: 11 }, (_, i) => (currentYear - i).toString());
 
@@ -77,7 +101,7 @@ const initialFormData: StudentFormData = {
   first_name: '',
   last_name: '',
   email: '',
-  current_class_id: '',
+  current_class_id: null,
   section: '',
   year: currentYear.toString(),
   date_of_birth: '',
@@ -92,6 +116,12 @@ const initialFormData: StudentFormData = {
   allergies: '',
   medical_conditions: '',
   notes: '',
+};
+
+const initialCredentialsData: CredentialsData = {
+  username: '',
+  password: '',
+  showPassword: false,
 };
 
 const BLOOD_GROUP_OPTIONS = [
@@ -117,10 +147,15 @@ const Students: React.FC = () => {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [formData, setFormData] = useState<StudentFormData>(initialFormData);
-  const [classes, setClasses] = useState<{ id: number; name: string; section: string }[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [credentialsData, setCredentialsData] = useState<CredentialsData>(initialCredentialsData);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [academicYears, setAcademicYears] = useState<string[]>([]);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('');
+  const [activeStep, setActiveStep] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
 
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
@@ -143,31 +178,56 @@ const Students: React.FC = () => {
     }
   };
 
-  const fetchClasses = async () => {
+  const fetchClasses = async (academicYear?: string) => {
     try {
-      const response = await classesAPI.getClasses();
-      setClasses(Array.isArray(response.data) ? response.data : []);
+      const params = academicYear ? { academic_year: academicYear } : {};
+      const response = await classesAPI.getClasses(params);
+      // Handle both paginated and non-paginated responses
+      const classesData = response.data.results || response.data;
+      setClasses(Array.isArray(classesData) ? classesData : []);
     } catch (err) {
+      console.error('Error fetching classes:', err);
       setClasses([]);
+    }
+  };
+
+  const fetchAcademicYears = async () => {
+    try {
+      const response = await classesAPI.getAcademicYears();
+      const years = response.data.academic_years || [];
+      setAcademicYears(years);
+      if (years.length > 0 && !selectedAcademicYear) {
+        setSelectedAcademicYear(years[0]); // Set to latest year
+        fetchClasses(years[0]);
+      }
+    } catch (err) {
+      console.error('Error fetching academic years:', err);
+      setAcademicYears([]);
     }
   };
 
   useEffect(() => {
     fetchStudents();
+    fetchAcademicYears();
   }, []);
+
+  useEffect(() => {
+    if (selectedAcademicYear) {
+      fetchClasses(selectedAcademicYear);
+    }
+  }, [selectedAcademicYear]);
 
   const handleSearch = () => {
     fetchStudents(search);
   };
 
   const handleOpenDialog = (student?: Student) => {
-    fetchClasses();
     if (student) {
       setFormData({
         first_name: student.user.first_name,
         last_name: student.user.last_name,
         email: student.user.email,
-        current_class_id: student.current_class ? student.current_class.name : '',
+        current_class_id: student.current_class ? student.current_class.id : null,
         section: student.current_class && student.current_class.section ? student.current_class.section : '',
         year: currentYear.toString(),
         date_of_birth: '',
@@ -183,67 +243,103 @@ const Students: React.FC = () => {
         medical_conditions: '',
         notes: '',
       });
-      setSelectedClassId(student.current_class ? student.current_class.name : '');
     } else {
       setFormData(initialFormData);
-      setSelectedClassId('');
     }
     setSelectedStudent(student || null);
+    setActiveStep(0);
     setDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedStudent(null);
+    setCredentialsDialogOpen(false);
+    setCredentialsData(initialCredentialsData);
   };
 
   const handleFormChange = (field: keyof StudentFormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Student form data:', formData);
-    setDialogOpen(false);
+    setSubmitting(true);
+    
+    try {
+      if (selectedStudent) {
+        // Update existing student
+        await studentsAPI.updateStudent(selectedStudent.id, formData);
+        fetchStudents();
+        handleCloseDialog();
+      } else {
+        // Create new student with credentials
+        const response = await studentsAPI.createStudentWithCredentials(formData);
+        setCredentialsData({
+          username: response.data.credentials.username,
+          password: response.data.credentials.password,
+          showPassword: false,
+        });
+        setCredentialsDialogOpen(true);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to save student.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDelete = (student: Student) => {
-    alert(`Delete student ${student.student_id}`);
+    if (window.confirm('Are you sure you want to delete this student?')) {
+      studentsAPI.deleteStudent(student.id).then(() => {
+        fetchStudents();
+      }).catch(() => {
+        setError('Failed to delete student.');
+      });
+    }
   };
 
   const renderClassDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-      <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Class *</InputLabel>
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Class *</InputLabel>
       <Select
-        value={selectedClassId}
-        onChange={e => {
-          setSelectedClassId(e.target.value);
-          handleFormChange('current_class_id', e.target.value);
-        }}
+        value={formData.current_class_id || ''}
+        onChange={e => handleFormChange('current_class_id', e.target.value)}
         label="Class *"
         required
-        fullWidth
-        variant="outlined"
-        style={{ minWidth: 220 }}
       >
-        {Array.from(new Set(classes.map(cls => cls.name))).map(className => (
-          <MenuItem key={className} value={className}>{className}</MenuItem>
+        {classes.map(cls => (
+          <MenuItem key={cls.id} value={cls.id}>
+            {cls.name} - {cls.section} ({cls.academic_year})
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  );
+
+  const renderAcademicYearDropdown = (): React.ReactNode => (
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Academic Year</InputLabel>
+      <Select
+        value={selectedAcademicYear}
+        onChange={e => setSelectedAcademicYear(e.target.value)}
+        label="Academic Year"
+      >
+        {academicYears.map(year => (
+          <MenuItem key={year} value={year}>{year}</MenuItem>
         ))}
       </Select>
     </FormControl>
   );
 
   const renderGenderDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-      <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Gender *</InputLabel>
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Gender *</InputLabel>
       <Select
         value={formData.gender}
         onChange={e => handleFormChange('gender', e.target.value)}
         label="Gender *"
         required
-        fullWidth
-        variant="outlined"
-        style={{ minWidth: 220 }}
       >
         {GENDER_OPTIONS.map(opt => (
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
@@ -253,16 +349,13 @@ const Students: React.FC = () => {
   );
 
   const renderYearDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-      <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Year *</InputLabel>
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Year *</InputLabel>
       <Select
         value={formData.year}
         onChange={e => handleFormChange('year', e.target.value)}
         label="Year *"
         required
-        fullWidth
-        variant="outlined"
-        style={{ minWidth: 220 }}
       >
         {years.map(year => (
           <MenuItem key={year} value={year}>{year}</MenuItem>
@@ -272,16 +365,13 @@ const Students: React.FC = () => {
   );
 
   const renderAcademicStatusDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-      <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Academic Status *</InputLabel>
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Academic Status *</InputLabel>
       <Select
         value={formData.academic_status}
         onChange={e => handleFormChange('academic_status', e.target.value)}
         label="Academic Status *"
         required
-        fullWidth
-        variant="outlined"
-        style={{ minWidth: 220 }}
       >
         {ACADEMIC_STATUS_OPTIONS.map(opt => (
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
@@ -291,15 +381,12 @@ const Students: React.FC = () => {
   );
 
   const renderBloodGroupDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-      <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Blood Group</InputLabel>
+    <FormControl fullWidth margin="dense" variant="outlined">
+      <InputLabel>Blood Group</InputLabel>
       <Select
         value={formData.blood_group}
         onChange={e => handleFormChange('blood_group', e.target.value)}
         label="Blood Group"
-        fullWidth
-        variant="outlined"
-        style={{ minWidth: 220 }}
       >
         {BLOOD_GROUP_OPTIONS.map(bg => (
           <MenuItem key={bg} value={bg}>{bg}</MenuItem>
@@ -311,15 +398,24 @@ const Students: React.FC = () => {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Students Management
-      </Typography>
+        <Typography variant="h4" gutterBottom>
+          Students Management
+        </Typography>
         {canManage && (
           <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
             Add Student
           </Button>
         )}
       </Box>
+      
+      {/* Academic Year Filter */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+        <Typography variant="body2" sx={{ minWidth: 100 }}>
+          Academic Year:
+        </Typography>
+        {renderAcademicYearDropdown()}
+      </Box>
+      
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           variant="outlined"
@@ -334,7 +430,9 @@ const Students: React.FC = () => {
           Search
         </Button>
       </Box>
+      
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      
       <Card>
         <CardContent>
           {loading ? (
@@ -363,7 +461,7 @@ const Students: React.FC = () => {
                       <TableCell>{student.student_id}</TableCell>
                       <TableCell>
                         {student.current_class
-                          ? `${student.current_class.name}${student.current_class.section ? ' - ' + student.current_class.section : ''}`
+                          ? `${student.current_class.name}${student.current_class.section ? ' - ' + student.current_class.section : ''} (${student.current_class.academic_year})`
                           : '-'}
                       </TableCell>
                       <TableCell>
@@ -402,13 +500,14 @@ const Students: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Student Form Dialog */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>{selectedStudent ? 'Edit Student' : 'Add Student'}</DialogTitle>
         <form onSubmit={handleFormSubmit}>
           <DialogContent>
-            <Grid container spacing={2}>
-              {/* Row 1 */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+            <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="First Name"
                   value={formData.first_name}
@@ -419,7 +518,7 @@ const Students: React.FC = () => {
                   required
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Last Name"
                   value={formData.last_name}
@@ -430,7 +529,7 @@ const Students: React.FC = () => {
                   required
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Email"
                   value={formData.email}
@@ -440,18 +539,16 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              {/* Row 2 */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 {renderClassDropdown()}
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 {renderGenderDropdown()}
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 {renderYearDropdown()}
               </Grid>
-              {/* Row 3 */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Date of Birth"
                   type="date"
@@ -462,7 +559,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Address"
                   value={formData.address}
@@ -472,7 +569,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Phone Number"
                   value={formData.phone_number}
@@ -482,8 +579,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              {/* Row 4 */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Emergency Contact"
                   value={formData.emergency_contact}
@@ -493,7 +589,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Emergency Contact Name"
                   value={formData.emergency_contact_name}
@@ -503,14 +599,13 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 {renderAcademicStatusDropdown()}
               </Grid>
-              {/* Row 5 */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 {renderBloodGroupDropdown()}
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Allergies"
                   value={formData.allergies}
@@ -520,7 +615,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              <Grid item xs={12} md={4} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
                 <TextField
                   label="Medical Condition"
                   value={formData.medical_conditions}
@@ -530,8 +625,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              {/* Row 6: Notes full width */}
-              <Grid item xs={12} {...({ item: true } as any)}>
+              <Grid sx={{ gridColumn: 'span 12' }}>
                 <TextField
                   label="Notes"
                   value={formData.notes}
@@ -541,8 +635,7 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                 />
               </Grid>
-              {/* Active checkbox at the left bottom corner */}
-              <Grid item xs={12} md={4} {...({ item: true } as any)} sx={{ display: 'flex', alignItems: 'flex-end' }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'flex-end' }}>
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -554,34 +647,69 @@ const Students: React.FC = () => {
                   sx={{ mb: 1 }}
                 />
               </Grid>
-              {selectedClassId && (
-                <Grid item xs={12} md={4} {...({ item: true } as any)}>
-                  <FormControl fullWidth margin="dense" variant="outlined" sx={{ minWidth: 220 }}>
-                    <InputLabel shrink={true} variant="outlined" sx={{ width: 'auto', minWidth: 220 }}>Section</InputLabel>
-                    <Select
-                      value={formData.section}
-                      onChange={e => handleFormChange('section', e.target.value)}
-                      label="Section"
-                      fullWidth
-                      variant="outlined"
-                      style={{ minWidth: 220 }}
-                    >
-                      {SECTION_OPTIONS.map(section => (
-                        <MenuItem key={section} value={section}>{section}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-              )}
             </Grid>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button variant="contained" type="submit">
-              Save
+            <Button 
+              variant="contained" 
+              type="submit" 
+              disabled={submitting}
+            >
+              {submitting ? <CircularProgress size={20} /> : 'Save'}
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Credentials Dialog */}
+      <Dialog open={credentialsDialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Student Credentials Generated</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            The student account has been created successfully. Please save these credentials securely.
+          </Alert>
+          <Grid container spacing={2}>
+            <Grid sx={{ gridColumn: 'span 12' }}>
+              <TextField
+                label="Username"
+                value={credentialsData.username}
+                onChange={e => setCredentialsData(prev => ({ ...prev, username: e.target.value }))}
+                fullWidth
+                margin="dense"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid sx={{ gridColumn: 'span 12' }}>
+              <TextField
+                label="Password"
+                type={credentialsData.showPassword ? 'text' : 'password'}
+                value={credentialsData.password}
+                onChange={e => setCredentialsData(prev => ({ ...prev, password: e.target.value }))}
+                fullWidth
+                margin="dense"
+                InputLabelProps={{ shrink: true }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setCredentialsData(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                        edge="end"
+                      >
+                        {credentialsData.showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog} variant="contained">
+            Close
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

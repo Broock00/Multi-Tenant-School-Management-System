@@ -4,8 +4,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
 from .models import Student
-from .serializers import StudentSerializer, StudentListSerializer
+from .serializers import StudentSerializer, StudentListSerializer, StudentCreateSerializer
 from rest_framework.exceptions import ValidationError, PermissionDenied
+from classes.models import Class
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -39,6 +40,8 @@ class StudentViewSet(viewsets.ModelViewSet):
         """Return appropriate serializer based on action"""
         if self.action == 'list':
             return StudentListSerializer
+        elif self.action == 'create':
+            return StudentCreateSerializer
         return StudentSerializer
     
     def check_student_permissions(self, user, student=None, class_id=None):
@@ -104,6 +107,68 @@ class StudentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         self.check_student_permissions(user, instance)
         instance.delete()
+    
+    @action(detail=False, methods=['get'])
+    def academic_years(self, request):
+        """Get available academic years from classes"""
+        user = request.user
+        
+        if user.role == 'super_admin':
+            years = Class.objects.values_list('academic_year', flat=True).distinct().order_by('-academic_year')
+        else:
+            years = Class.objects.filter(school=user.school).values_list('academic_year', flat=True).distinct().order_by('-academic_year')
+        
+        return Response({
+            'academic_years': list(years),
+            'latest_year': years.first() if years.exists() else None
+        })
+    
+    @action(detail=False, methods=['post'])
+    def create_with_credentials(self, request):
+        """Create student with auto-generated credentials"""
+        user = request.user
+        
+        # Check permissions
+        if user.role not in ['super_admin', 'school_admin', 'secretary']:
+            return Response(
+                {'error': 'Only administrators and secretaries can create students'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Validate basic student data
+        serializer = StudentCreateSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Extract user data from request
+        first_name = request.data.get('first_name', '')
+        last_name = request.data.get('last_name', '')
+        email = request.data.get('email', '')
+        
+        # Create student without user account first
+        student_data = serializer.validated_data
+        student = Student.objects.create(
+            school=user.school,
+            **student_data
+        )
+        
+        # Generate credentials
+        credentials = student.create_user_account(
+            first_name=first_name,
+            last_name=last_name,
+            email=email
+        )
+        
+        if credentials:
+            return Response({
+                'message': 'Student created successfully',
+                'student_id': student.id,
+                'credentials': credentials
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'error': 'Failed to create user account'
+            }, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['get'])
     def my_profile(self, request):

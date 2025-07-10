@@ -4,6 +4,42 @@ from users.serializers import UserSerializer
 from classes.serializers import ClassSerializer
 
 
+class StudentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating students with basic information"""
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    current_class_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    
+    class Meta:
+        model = Student
+        fields = [
+            'first_name', 'last_name', 'email', 'current_class_id',
+            'date_of_birth', 'gender', 'address', 'phone_number',
+            'emergency_contact', 'emergency_contact_name', 'year',
+            'blood_group', 'allergies', 'medical_conditions', 'notes'
+        ]
+    
+    def validate(self, data):
+        """Validate student data"""
+        # Ensure required fields are provided
+        required_fields = ['first_name', 'last_name', 'email', 'date_of_birth', 'gender']
+        for field in required_fields:
+            if not data.get(field):
+                raise serializers.ValidationError(f"{field} is required")
+        
+        return data
+    
+    def create(self, validated_data):
+        """Create student without user account"""
+        # Remove user-related fields from validated_data
+        user_fields = ['first_name', 'last_name', 'email']
+        for field in user_fields:
+            validated_data.pop(field, None)
+        
+        return super().create(validated_data)
+
+
 class StudentSerializer(serializers.ModelSerializer):
     """Student serializer"""
     user = UserSerializer(read_only=True)

@@ -115,6 +115,8 @@ export const studentsAPI = {
   searchStudents: (query: string) => api.get('/students/search/', { params: { q: query } }),
   getStudentsByClass: (classId: number) => api.get('/students/by_class/', { params: { class_id: classId } }),
   getActiveStudents: () => api.get('/students/active/'),
+  getAcademicYears: () => api.get('/students/academic_years/'),
+  createStudentWithCredentials: (data: any) => api.post('/students/create_with_credentials/', data),
 };
 
 // Classes API

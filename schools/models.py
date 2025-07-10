@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from notifications.services import EmailService
 from users.models import User
 from datetime import timedelta
+import re
 
 # Create your models here.
 
@@ -44,6 +45,44 @@ class School(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.code})"
+    
+    def generate_school_code(self):
+        """Generate a unique school code based on the school name"""
+        if not self.name:
+            return None
+        
+        # Take the first letter of each word and convert to uppercase
+        words = re.findall(r'\b\w+', self.name)
+        base_code = ''.join(word[0].upper() for word in words if word)
+        
+        if not base_code:
+            return None
+        
+        # Check if this base code already exists
+        existing_codes = School.objects.filter(code__startswith=base_code).values_list('code', flat=True)
+        
+        if not existing_codes:
+            return base_code
+        
+        # Find the next available number
+        numbers = []
+        for code in existing_codes:
+            if code == base_code:
+                numbers.append(0)  # Base code without number
+            elif code.startswith(base_code) and code[len(base_code):].isdigit():
+                numbers.append(int(code[len(base_code):]))
+        
+        if not numbers:
+            return base_code
+        
+        next_number = max(numbers) + 1
+        return f"{base_code}{next_number}"
+    
+    def save(self, *args, **kwargs):
+        """Auto-generate school code if not provided"""
+        if not self.code:
+            self.code = self.generate_school_code()
+        super().save(*args, **kwargs)
     
     @property
     def current_subscription(self):

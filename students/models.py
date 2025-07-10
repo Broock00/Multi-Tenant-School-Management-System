@@ -2,6 +2,8 @@ from django.db import models
 from users.models import User
 from schools.models import School
 from classes.models import Class
+import secrets
+import string
 
 
 class Student(models.Model):
@@ -62,6 +64,82 @@ class Student(models.Model):
             return None
         today = date.today()
         return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    
+    def generate_username(self):
+        """Generate a unique username based on school code and sequential numbering"""
+        if not self.school:
+            return None
+        
+        school_code = self.school.code
+        if not school_code:
+            return None
+        
+        # Find the next available number for this school
+        existing_students = Student.objects.filter(school=self.school).order_by('-id')
+        
+        if not existing_students.exists():
+            next_number = 1
+        else:
+            # Try to extract number from existing usernames
+            numbers = []
+            for student in existing_students:
+                if student.user.username.startswith(school_code):
+                    try:
+                        number_part = student.user.username[len(school_code):]
+                        if number_part.isdigit():
+                            numbers.append(int(number_part))
+                    except (ValueError, IndexError):
+                        continue
+            
+            if numbers:
+                next_number = max(numbers) + 1
+            else:
+                next_number = 1
+        
+        # Format with 3-6 digits depending on expected student count
+        if next_number <= 999:
+            format_str = f"{school_code}{next_number:03d}"
+        elif next_number <= 9999:
+            format_str = f"{school_code}{next_number:04d}"
+        elif next_number <= 99999:
+            format_str = f"{school_code}{next_number:05d}"
+        else:
+            format_str = f"{school_code}{next_number:06d}"
+        
+        return format_str
+    
+    def generate_password(self):
+        """Generate a secure random password"""
+        # 8 characters: letters, numbers, symbols
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        return ''.join(secrets.choice(alphabet) for _ in range(8))
+    
+    def create_user_account(self):
+        """Create a user account for the student with auto-generated credentials"""
+        if not self.user:
+            username = self.generate_username()
+            password = self.generate_password()
+            
+            # Create user
+            user = User.objects.create_user(
+                username=username,
+                email=self.user.email if hasattr(self, 'user') and self.user else f"{username}@school.com",
+                password=password,
+                first_name=self.user.first_name if hasattr(self, 'user') and self.user else '',
+                last_name=self.user.last_name if hasattr(self, 'user') and self.user else '',
+                role='student',
+                school=self.school
+            )
+            
+            self.user = user
+            self.save()
+            
+            return {
+                'username': username,
+                'password': password,
+                'user_id': user.id
+            }
+        return None
 
     def save(self, *args, **kwargs):
         if not self.student_id:

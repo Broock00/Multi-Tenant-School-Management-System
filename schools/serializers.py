@@ -21,7 +21,14 @@ class SchoolSerializer(serializers.ModelSerializer):
             'subscription_status', 'created_at', 'updated_at',
             'admin_id',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'code', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """Validate school data"""
+        # Ensure school name is provided for code generation
+        if not data.get('name'):
+            raise serializers.ValidationError("School name is required for code generation")
+        return data
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -78,7 +85,7 @@ class SchoolWithSubscriptionSerializer(serializers.ModelSerializer):
             'current_subscription', 'subscription_status', 'created_at', 'updated_at',
             'admin_id',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'code', 'created_at', 'updated_at']
 
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
