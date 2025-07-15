@@ -127,48 +127,62 @@ class StudentViewSet(viewsets.ModelViewSet):
     def create_with_credentials(self, request):
         """Create student with auto-generated credentials"""
         user = request.user
-        
+
         # Check permissions
         if user.role not in ['super_admin', 'school_admin', 'secretary']:
             return Response(
                 {'error': 'Only administrators and secretaries can create students'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Validate basic student data
         serializer = StudentCreateSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Extract user data from request
-        first_name = request.data.get('first_name', '')
-        last_name = request.data.get('last_name', '')
-        email = request.data.get('email', '')
-        
-        # Create student without user account first
-        student_data = serializer.validated_data
+
+        # Extract user data from validated_data
+        student_data = serializer.validated_data.copy()
+        first_name = student_data.pop('first_name')
+        last_name = student_data.pop('last_name')
+        email = student_data.pop('email')
+
+        from users.models import User
+        from students.models import Student
+
+        # Generate a temporary Student instance to use the username/password logic
+        temp_student = Student(school=user.school, **student_data)
+        username = temp_student.generate_username()
+        password = temp_student.generate_password()
+
+        # Create the user
+        student_user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            role='student',
+            school=user.school
+        )
+
+        # Now create the student, linking to the user
         student = Student.objects.create(
+            user=student_user,
             school=user.school,
             **student_data
         )
-        
-        # Generate credentials
-        credentials = student.create_user_account(
-            first_name=first_name,
-            last_name=last_name,
-            email=email
-        )
-        
-        if credentials:
-            return Response({
-                'message': 'Student created successfully',
-                'student_id': student.id,
-                'credentials': credentials
-            }, status=status.HTTP_201_CREATED)
-        else:
-            return Response({
-                'error': 'Failed to create user account'
-            }, status=status.HTTP_400_BAD_REQUEST)
+
+        credentials = {
+            'username': username,
+            'password': password,
+            'user_id': student_user.id
+        }
+
+        return Response({
+            'message': 'Student created successfully',
+            'student_id': student.id,
+            'credentials': credentials
+        }, status=status.HTTP_201_CREATED)
     
     @action(detail=False, methods=['get'])
     def my_profile(self, request):

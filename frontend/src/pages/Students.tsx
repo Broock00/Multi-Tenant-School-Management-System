@@ -28,11 +28,9 @@ import {
   Select,
   Checkbox,
   FormControlLabel,
-  Stepper,
-  Step,
-  StepLabel,
   InputAdornment,
-  IconButton as MuiIconButton,
+  Pagination,
+  Divider,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons-material';
@@ -94,16 +92,13 @@ interface CredentialsData {
   showPassword: boolean;
 }
 
-const currentYear = dayjs().year();
-const years = Array.from({ length: 11 }, (_, i) => (currentYear - i).toString());
-
 const initialFormData: StudentFormData = {
   first_name: '',
   last_name: '',
   email: '',
   current_class_id: null,
   section: '',
-  year: currentYear.toString(),
+  year: dayjs().year().toString(),
   date_of_birth: '',
   gender: '',
   address: '',
@@ -124,9 +119,7 @@ const initialCredentialsData: CredentialsData = {
   showPassword: false,
 };
 
-const BLOOD_GROUP_OPTIONS = [
-  'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
-];
+const BLOOD_GROUP_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const GENDER_OPTIONS = [
   { value: 'M', label: 'Male' },
   { value: 'F', label: 'Female' },
@@ -137,8 +130,6 @@ const ACADEMIC_STATUS_OPTIONS = [
   { value: 'transferred', label: 'Transferred' },
   { value: 'expelled', label: 'Expelled' },
 ];
-
-const SECTION_OPTIONS = ['A', 'B', 'C', 'D'];
 
 const Students: React.FC = () => {
   const { user } = useAuth();
@@ -154,22 +145,31 @@ const Students: React.FC = () => {
   const [classes, setClasses] = useState<Class[]>([]);
   const [academicYears, setAcademicYears] = useState<string[]>([]);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('');
-  const [activeStep, setActiveStep] = useState(0);
+  const [formAcademicYear, setFormAcademicYear] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(12);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [submitting, setSubmitting] = useState(false);
 
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
-  const fetchStudents = async (query = '') => {
+  const fetchStudents = async (pageNum: number = 1, query: string = '') => {
     setLoading(true);
     setError('');
     try {
-      let response;
+      const params: any = { page: pageNum, page_size: pageSize };
       if (query) {
-        response = await studentsAPI.searchStudents(query);
-      } else {
-        response = await studentsAPI.getStudents();
+        params.search = query;
       }
-      setStudents(Array.isArray(response.data) ? response.data : []);
+      const response = await studentsAPI.getStudents(params);
+      const studentsData = response.data.results || response.data;
+      setStudents(Array.isArray(studentsData) ? studentsData : []);
+      if (response.data.count !== undefined) {
+        setTotalCount(response.data.count);
+        setTotalPages(Math.ceil(response.data.count / pageSize));
+      }
+      setPage(pageNum);
     } catch (err: any) {
       setError('Failed to load students.');
       setStudents([]);
@@ -182,11 +182,11 @@ const Students: React.FC = () => {
     try {
       const params = academicYear ? { academic_year: academicYear } : {};
       const response = await classesAPI.getClasses(params);
-      // Handle both paginated and non-paginated responses
       const classesData = response.data.results || response.data;
+      console.log(`fetchClasses for ${academicYear || 'all years'}:`, classesData);
       setClasses(Array.isArray(classesData) ? classesData : []);
     } catch (err) {
-      console.error('Error fetching classes:', err);
+      console.error(`Error fetching classes for ${academicYear || 'all years'}:`, err);
       setClasses([]);
     }
   };
@@ -195,10 +195,13 @@ const Students: React.FC = () => {
     try {
       const response = await classesAPI.getAcademicYears();
       const years = response.data.academic_years || [];
+      console.log('fetchAcademicYears:', years);
       setAcademicYears(years);
-      if (years.length > 0 && !selectedAcademicYear) {
-        setSelectedAcademicYear(years[0]); // Set to latest year
-        fetchClasses(years[0]);
+      if (years.length > 0) {
+        const latestYear = years[0];
+        setSelectedAcademicYear(latestYear);
+        setFormAcademicYear(latestYear);
+        fetchClasses(latestYear);
       }
     } catch (err) {
       console.error('Error fetching academic years:', err);
@@ -207,7 +210,7 @@ const Students: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchStudents(1);
     fetchAcademicYears();
   }, []);
 
@@ -217,8 +220,25 @@ const Students: React.FC = () => {
     }
   }, [selectedAcademicYear]);
 
+  useEffect(() => {
+    if (formAcademicYear) {
+      fetchClasses(formAcademicYear);
+      setFormData(prev => ({
+        ...prev,
+        current_class_id: null,
+      }));
+    }
+    // eslint-disable-next-line
+  }, [formAcademicYear]);
+
   const handleSearch = () => {
-    fetchStudents(search);
+    setPage(1);
+    fetchStudents(1, search);
+  };
+
+  const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
+    setPage(value);
+    fetchStudents(value, search);
   };
 
   const handleOpenDialog = (student?: Student) => {
@@ -228,8 +248,8 @@ const Students: React.FC = () => {
         last_name: student.user.last_name,
         email: student.user.email,
         current_class_id: student.current_class ? student.current_class.id : null,
-        section: student.current_class && student.current_class.section ? student.current_class.section : '',
-        year: currentYear.toString(),
+        section: student.current_class?.section || '',
+        year: student.current_class?.academic_year || academicYears[0] || dayjs().year().toString(),
         date_of_birth: '',
         gender: '',
         address: '',
@@ -243,19 +263,23 @@ const Students: React.FC = () => {
         medical_conditions: '',
         notes: '',
       });
+      setFormAcademicYear(student.current_class?.academic_year || academicYears[0] || '');
     } else {
-      setFormData(initialFormData);
+      setFormData({ ...initialFormData, year: academicYears[0] || dayjs().year().toString() });
+      setFormAcademicYear(academicYears[0] || '');
     }
     setSelectedStudent(student || null);
-    setActiveStep(0);
+    setCredentialsData(initialCredentialsData);
     setDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
-    setSelectedStudent(null);
     setCredentialsDialogOpen(false);
+    setSelectedStudent(null);
+    setFormData(initialFormData);
     setCredentialsData(initialCredentialsData);
+    setFormAcademicYear(academicYears[0] || '');
   };
 
   const handleFormChange = (field: keyof StudentFormData, value: any) => {
@@ -265,15 +289,13 @@ const Students: React.FC = () => {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    
+    const currentPageCount = totalPages;
     try {
       if (selectedStudent) {
-        // Update existing student
         await studentsAPI.updateStudent(selectedStudent.id, formData);
-        fetchStudents();
+        await fetchStudents(page, search);
         handleCloseDialog();
       } else {
-        // Create new student with credentials
         const response = await studentsAPI.createStudentWithCredentials(formData);
         setCredentialsData({
           username: response.data.credentials.username,
@@ -281,6 +303,14 @@ const Students: React.FC = () => {
           showPassword: false,
         });
         setCredentialsDialogOpen(true);
+        await fetchStudents(page, search);
+        // Do NOT call handleCloseDialog() here!
+      }
+      // Adjust page only if on the last page and a new page is created
+      const newPageCount = Math.ceil(totalCount / pageSize);
+      if (!selectedStudent && page === currentPageCount && newPageCount > currentPageCount) {
+        setPage(newPageCount);
+        fetchStudents(newPageCount, search);
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to save student.');
@@ -289,41 +319,75 @@ const Students: React.FC = () => {
     }
   };
 
-  const handleDelete = (student: Student) => {
+  const handleDelete = async (student: Student) => {
     if (window.confirm('Are you sure you want to delete this student?')) {
-      studentsAPI.deleteStudent(student.id).then(() => {
-        fetchStudents();
-      }).catch(() => {
+      try {
+        await studentsAPI.deleteStudent(student.id);
+        await fetchStudents(page, search);
+        // Adjust page if current page is invalid
+        const newPageCount = Math.ceil(totalCount / pageSize);
+        if (page > newPageCount && newPageCount > 0) {
+          setPage(newPageCount);
+          fetchStudents(newPageCount, search);
+        }
+      } catch (err) {
         setError('Failed to delete student.');
-      });
+      }
     }
   };
 
-  const renderClassDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Class *</InputLabel>
+  const renderClassDropdown = () => (
+    <FormControl
+      fullWidth
+      margin="normal"
+      sx={{ minWidth: 120, '& .MuiInputBase-root': { height: 56 } }}
+    >
+      <InputLabel id="class-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+        Class *
+      </InputLabel>
       <Select
+        labelId="class-label"
         value={formData.current_class_id || ''}
-        onChange={e => handleFormChange('current_class_id', e.target.value)}
+        onChange={e => handleFormChange('current_class_id', Number(e.target.value) || null)}
         label="Class *"
         required
+        inputProps={{ 'aria-label': 'Class' }}
       >
-        {classes.map(cls => (
-          <MenuItem key={cls.id} value={cls.id}>
-            {cls.name} - {cls.section} ({cls.academic_year})
+        {classes.length === 0 ? (
+          <MenuItem value="" disabled>
+            No classes available
           </MenuItem>
-        ))}
+        ) : (
+          classes.map(cls => (
+            <MenuItem key={cls.id} value={cls.id}>
+              {cls.name} - {cls.section} ({cls.academic_year})
+            </MenuItem>
+          ))
+        )}
       </Select>
     </FormControl>
   );
 
-  const renderAcademicYearDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Academic Year</InputLabel>
+  const renderFormAcademicYearDropdown = () => (
+    <FormControl
+      fullWidth
+      margin="normal"
+      sx={{ minWidth: 120, '& .MuiInputBase-root': { height: 56 } }}
+    >
+      <InputLabel id="academic-year-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+        Academic Year *
+      </InputLabel>
       <Select
-        value={selectedAcademicYear}
-        onChange={e => setSelectedAcademicYear(e.target.value)}
-        label="Academic Year"
+        labelId="academic-year-label"
+        value={formAcademicYear}
+        onChange={e => {
+          setFormAcademicYear(e.target.value);
+          handleFormChange('year', e.target.value);
+          handleFormChange('current_class_id', null);
+        }}
+        label="Academic Year *"
+        required
+        inputProps={{ 'aria-label': 'Academic Year' }}
       >
         {academicYears.map(year => (
           <MenuItem key={year} value={year}>{year}</MenuItem>
@@ -332,14 +396,22 @@ const Students: React.FC = () => {
     </FormControl>
   );
 
-  const renderGenderDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Gender *</InputLabel>
+  const renderGenderDropdown = () => (
+    <FormControl
+      fullWidth
+      margin="normal"
+      sx={{ minWidth: 120, '& .MuiInputBase-root': { height: 56 } }}
+    >
+      <InputLabel id="gender-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+        Gender *
+      </InputLabel>
       <Select
+        labelId="gender-label"
         value={formData.gender}
         onChange={e => handleFormChange('gender', e.target.value)}
         label="Gender *"
         required
+        inputProps={{ 'aria-label': 'Gender' }}
       >
         {GENDER_OPTIONS.map(opt => (
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
@@ -348,30 +420,22 @@ const Students: React.FC = () => {
     </FormControl>
   );
 
-  const renderYearDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Year *</InputLabel>
+  const renderAcademicStatusDropdown = () => (
+    <FormControl
+      fullWidth
+      margin="normal"
+      sx={{ minWidth: 120, '& .MuiInputBase-root': { height: 56 } }}
+    >
+      <InputLabel id="academic-status-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+        Academic Status *
+      </InputLabel>
       <Select
-        value={formData.year}
-        onChange={e => handleFormChange('year', e.target.value)}
-        label="Year *"
-        required
-      >
-        {years.map(year => (
-          <MenuItem key={year} value={year}>{year}</MenuItem>
-        ))}
-      </Select>
-    </FormControl>
-  );
-
-  const renderAcademicStatusDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Academic Status *</InputLabel>
-      <Select
+        labelId="academic-status-label"
         value={formData.academic_status}
         onChange={e => handleFormChange('academic_status', e.target.value)}
         label="Academic Status *"
         required
+        inputProps={{ 'aria-label': 'Academic Status' }}
       >
         {ACADEMIC_STATUS_OPTIONS.map(opt => (
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
@@ -380,13 +444,21 @@ const Students: React.FC = () => {
     </FormControl>
   );
 
-  const renderBloodGroupDropdown = (): React.ReactNode => (
-    <FormControl fullWidth margin="dense" variant="outlined">
-      <InputLabel>Blood Group</InputLabel>
+  const renderBloodGroupDropdown = () => (
+    <FormControl
+      fullWidth
+      margin="normal"
+      sx={{ minWidth: 120, '& .MuiInputBase-root': { height: 56 } }}
+    >
+      <InputLabel id="blood-group-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+        Blood Group
+      </InputLabel>
       <Select
+        labelId="blood-group-label"
         value={formData.blood_group}
         onChange={e => handleFormChange('blood_group', e.target.value)}
         label="Blood Group"
+        inputProps={{ 'aria-label': 'Blood Group' }}
       >
         {BLOOD_GROUP_OPTIONS.map(bg => (
           <MenuItem key={bg} value={bg}>{bg}</MenuItem>
@@ -407,15 +479,33 @@ const Students: React.FC = () => {
           </Button>
         )}
       </Box>
-      
+
       {/* Academic Year Filter */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
         <Typography variant="body2" sx={{ minWidth: 100 }}>
           Academic Year:
         </Typography>
-        {renderAcademicYearDropdown()}
+        <FormControl
+          sx={{ minWidth: 200, '& .MuiInputBase-root': { height: 56 } }}
+          margin="normal"
+        >
+          <InputLabel id="filter-academic-year-label" shrink sx={{ transform: 'translate(14px, -6px) scale(0.75)' }}>
+            Academic Year
+          </InputLabel>
+          <Select
+            labelId="filter-academic-year-label"
+            value={selectedAcademicYear}
+            onChange={e => setSelectedAcademicYear(e.target.value)}
+            label="Academic Year"
+            inputProps={{ 'aria-label': 'Filter Academic Year' }}
+          >
+            {academicYears.map(year => (
+              <MenuItem key={year} value={year}>{year}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
-      
+
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           variant="outlined"
@@ -425,14 +515,16 @@ const Students: React.FC = () => {
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           InputProps={{ startAdornment: <Search sx={{ mr: 1 }} /> }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ '& .MuiInputBase-root': { height: 40 } }}
         />
         <Button variant="outlined" onClick={handleSearch} disabled={loading}>
           Search
         </Button>
       </Box>
-      
+
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      
+
       <Card>
         <CardContent>
           {loading ? (
@@ -440,63 +532,78 @@ const Students: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : (
-            <TableContainer component={Paper}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>ID</TableCell>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Student ID</TableCell>
-                    <TableCell>Class</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Payment Status</TableCell>
-                    {canManage && <TableCell>Actions</TableCell>}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(Array.isArray(students) ? students : []).map(student => (
-                    <TableRow key={student.id}>
-                      <TableCell>{student.id}</TableCell>
-                      <TableCell>{student.user.first_name} {student.user.last_name}</TableCell>
-                      <TableCell>{student.student_id}</TableCell>
-                      <TableCell>
-                        {student.current_class
-                          ? `${student.current_class.name}${student.current_class.section ? ' - ' + student.current_class.section : ''} (${student.current_class.academic_year})`
-                          : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={student.academic_status}
-                          size="small"
-                          color={student.academic_status === 'enrolled' ? 'success' : 'default'}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={student.payment_status === 'paid' ? 'Paid' : 'Pending'}
-                          color={student.payment_status === 'paid' ? 'success' : 'warning'}
-                          size="small"
-                        />
-                      </TableCell>
-                      {canManage && (
-                        <TableCell>
-                          <Tooltip title="Edit">
-                            <IconButton onClick={() => handleOpenDialog(student)}>
-                              <Edit />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton onClick={() => handleDelete(student)}>
-                              <Delete />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      )}
+            <>
+              <TableContainer component={Paper}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>ID</TableCell>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Student ID</TableCell>
+                      <TableCell>Class</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Payment Status</TableCell>
+                      {canManage && <TableCell>Actions</TableCell>}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {(Array.isArray(students) ? students : []).map(student => (
+                      <TableRow key={student.id}>
+                        <TableCell>{student.id}</TableCell>
+                        <TableCell>{student.user.first_name} {student.user.last_name}</TableCell>
+                        <TableCell>{student.student_id}</TableCell>
+                        <TableCell>
+                          {student.current_class
+                            ? `${student.current_class.name}${student.current_class.section ? ' - ' + student.current_class.section : ''} (${student.current_class.academic_year})`
+                            : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={student.academic_status}
+                            size="small"
+                            color={student.academic_status === 'enrolled' ? 'success' : 'default'}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={student.payment_status === 'paid' ? 'Paid' : 'Pending'}
+                            color={student.payment_status === 'paid' ? 'success' : 'warning'}
+                            size="small"
+                          />
+                        </TableCell>
+                        {canManage && (
+                          <TableCell>
+                            <Tooltip title="Edit">
+                              <IconButton onClick={() => handleOpenDialog(student)}>
+                                <Edit />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton onClick={() => handleDelete(student)}>
+                                <Delete />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {totalPages > 1 && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Page {page} of {totalPages} • Showing {students.length} of {totalCount} students
+                  </Typography>
+                  <Pagination
+                    count={totalPages}
+                    page={page}
+                    onChange={handlePageChange}
+                    color="primary"
+                  />
+                </Box>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -505,137 +612,185 @@ const Students: React.FC = () => {
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>{selectedStudent ? 'Edit Student' : 'Add Student'}</DialogTitle>
         <form onSubmit={handleFormSubmit}>
-          <DialogContent>
+          <DialogContent sx={{ py: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Personal Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
             <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="First Name"
                   value={formData.first_name}
                   onChange={e => handleFormChange('first_name', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
                   required
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Last Name"
                   value={formData.last_name}
                   onChange={e => handleFormChange('last_name', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
                   required
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Email"
                   value={formData.email}
                   onChange={e => handleFormChange('email', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
-                {renderClassDropdown()}
-              </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
-                {renderGenderDropdown()}
-              </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
-                {renderYearDropdown()}
-              </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Date of Birth"
                   type="date"
                   value={formData.date_of_birth}
                   onChange={e => handleFormChange('date_of_birth', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
+                {renderGenderDropdown()}
+              </Grid>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
+                {renderBloodGroupDropdown()}
+              </Grid>
+            </Grid>
+
+            <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+              Academic Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
+                {renderFormAcademicYearDropdown()}
+              </Grid>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
+                {renderClassDropdown()}
+              </Grid>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
+                {renderAcademicStatusDropdown()}
+              </Grid>
+            </Grid>
+
+            <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+              Contact Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Address"
                   value={formData.address}
                   onChange={e => handleFormChange('address', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Phone Number"
                   value={formData.phone_number}
                   onChange={e => handleFormChange('phone_number', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Emergency Contact"
                   value={formData.emergency_contact}
                   onChange={e => handleFormChange('emergency_contact', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Emergency Contact Name"
                   value={formData.emergency_contact_name}
                   onChange={e => handleFormChange('emergency_contact_name', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
-                {renderAcademicStatusDropdown()}
-              </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
-                {renderBloodGroupDropdown()}
-              </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+            </Grid>
+
+            <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+              Additional Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Allergies"
                   value={formData.allergies}
                   onChange={e => handleFormChange('allergies', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' } }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Medical Condition"
                   value={formData.medical_conditions}
                   onChange={e => handleFormChange('medical_conditions', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: 'span 12' }}>
+              <Grid sx={{ gridColumn: 'span 12', display: 'flex', alignItems: 'center' }}>
                 <TextField
                   label="Notes"
                   value={formData.notes}
                   onChange={e => handleFormChange('notes', e.target.value)}
                   fullWidth
-                  margin="dense"
+                  margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  variant="outlined"
+                  multiline
+                  rows={4}
                 />
               </Grid>
-              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'flex-end' }}>
+              <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -649,11 +804,13 @@ const Students: React.FC = () => {
               </Grid>
             </Grid>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button 
-              variant="contained" 
-              type="submit" 
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleCloseDialog} variant="outlined">
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              type="submit"
               disabled={submitting}
             >
               {submitting ? <CircularProgress size={20} /> : 'Save'}
@@ -665,30 +822,34 @@ const Students: React.FC = () => {
       {/* Credentials Dialog */}
       <Dialog open={credentialsDialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Student Credentials Generated</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ py: 3 }}>
           <Alert severity="info" sx={{ mb: 2 }}>
             The student account has been created successfully. Please save these credentials securely.
           </Alert>
-          <Grid container spacing={2}>
-            <Grid sx={{ gridColumn: 'span 12' }}>
+          <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+            <Grid sx={{ gridColumn: 'span 12', display: 'flex', alignItems: 'center' }}>
               <TextField
                 label="Username"
                 value={credentialsData.username}
                 onChange={e => setCredentialsData(prev => ({ ...prev, username: e.target.value }))}
                 fullWidth
-                margin="dense"
+                margin="normal"
                 InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                sx={{ '& .MuiInputBase-root': { height: 56 } }}
               />
             </Grid>
-            <Grid sx={{ gridColumn: 'span 12' }}>
+            <Grid sx={{ gridColumn: 'span 12', display: 'flex', alignItems: 'center' }}>
               <TextField
                 label="Password"
                 type={credentialsData.showPassword ? 'text' : 'password'}
                 value={credentialsData.password}
                 onChange={e => setCredentialsData(prev => ({ ...prev, password: e.target.value }))}
                 fullWidth
-                margin="dense"
+                margin="normal"
                 InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                sx={{ '& .MuiInputBase-root': { height: 56 } }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -705,9 +866,9 @@ const Students: React.FC = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseDialog} variant="contained">
-            Close
+            Done
           </Button>
         </DialogActions>
       </Dialog>
@@ -715,4 +876,4 @@ const Students: React.FC = () => {
   );
 };
 
-export default Students; 
+export default Students;
