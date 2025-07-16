@@ -7,34 +7,42 @@ from .models import Student
 from .serializers import StudentSerializer, StudentListSerializer, StudentCreateSerializer
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from classes.models import Class
+from rest_framework import filters
 
 
 class StudentViewSet(viewsets.ModelViewSet):
     """Student viewset"""
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__first_name', 'user__last_name', 'student_id']
+    ordering_fields = ['current_class__academic_year', 'created_at']
+    ordering = ['-current_class__academic_year', '-created_at']
+    filterset_fields = ['current_class__academic_year']
     
     def get_queryset(self):
-        """Return students based on user role and school"""
+        """Return students based on user role and school, and support filtering by academic_year alias"""
         user = self.request.user
-        
+        # Start with role-based queryset
         if user.role == 'super_admin':
-            return Student.objects.all()
+            queryset = Student.objects.all()
         elif user.role in ['school_admin', 'secretary']:
-            return Student.objects.filter(school=user.school)
+            queryset = Student.objects.filter(school=user.school)
         elif user.role == 'teacher':
-            # Teachers can see students in their classes
-            return Student.objects.filter(
+            queryset = Student.objects.filter(
                 current_class__teachers=user,
                 school=user.school
             )
         elif user.role == 'student':
-            # Students can only see their own profile
-            return Student.objects.filter(user=user)
+            queryset = Student.objects.filter(user=user)
         elif user.role == 'parent':
-            # Parents can see their children (would need parent-child relationship)
-            return Student.objects.none()
-        
-        return Student.objects.none()
+            queryset = Student.objects.none()
+        else:
+            queryset = Student.objects.none()
+        # Add academic_year alias filter
+        academic_year = self.request.query_params.get('academic_year')
+        if academic_year:
+            queryset = queryset.filter(current_class__academic_year=academic_year)
+        return queryset
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""

@@ -58,11 +58,14 @@ class StudentSerializer(serializers.ModelSerializer):
             'allergies', 'medical_conditions', 'notes', 'age',
             'created_at', 'updated_at', 'payment_status'
         ]
-        read_only_fields = ['id', 'enrollment_date', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'enrollment_date', 'created_at', 'updated_at', 'student_id', 'school']
     
     def validate_student_id(self, value):
-        """Validate unique student ID"""
-        if Student.objects.filter(student_id=value).exists():
+        """Validate unique student ID, excluding self on update"""
+        qs = Student.objects.filter(student_id=value)
+        if self.instance:
+            qs = qs.exclude(id=self.instance.id)
+        if qs.exists():
             raise serializers.ValidationError("Student ID must be unique.")
         return value
     
@@ -104,7 +107,10 @@ class StudentListSerializer(serializers.ModelSerializer):
         model = Student
         fields = [
             'id', 'user', 'current_class', 'student_id', 'date_of_birth',
-            'gender', 'is_active', 'academic_status', 'age', 'enrollment_date', 'payment_status'
+            'gender', 'is_active', 'academic_status', 'age', 'enrollment_date', 'payment_status',
+            # Add these fields:
+            'address', 'phone_number', 'emergency_contact', 'emergency_contact_name',
+            'blood_group', 'allergies', 'medical_conditions', 'notes'
         ] 
     
     def get_payment_status(self, obj):

@@ -50,6 +50,17 @@ interface Student {
   current_class?: { id: number; name: string; section: string; academic_year: string } | null;
   academic_status: string;
   payment_status: 'paid' | 'pending';
+  date_of_birth?: string;
+  gender?: string;
+  address?: string;
+  phone_number?: string;
+  emergency_contact?: string;
+  emergency_contact_name?: string;
+  is_active?: boolean;
+  blood_group?: string;
+  allergies?: string;
+  medical_conditions?: string;
+  notes?: string;
 }
 
 interface Class {
@@ -151,6 +162,7 @@ const Students: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
@@ -158,9 +170,12 @@ const Students: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const params: any = { page: pageNum, page_size: pageSize };
+      const params: any = { page: pageNum, page_size: pageSize, ordering: '-current_class__academic_year,-created_at' };
       if (query) {
         params.search = query;
+      }
+      if (selectedAcademicYear) {
+        params['academic_year'] = selectedAcademicYear;
       }
       const response = await studentsAPI.getStudents(params);
       const studentsData = response.data.results || response.data;
@@ -217,7 +232,10 @@ const Students: React.FC = () => {
   useEffect(() => {
     if (selectedAcademicYear) {
       fetchClasses(selectedAcademicYear);
+      fetchStudents(1, search);
+      setPage(1);
     }
+    // eslint-disable-next-line
   }, [selectedAcademicYear]);
 
   useEffect(() => {
@@ -242,34 +260,38 @@ const Students: React.FC = () => {
   };
 
   const handleOpenDialog = (student?: Student) => {
+    setFormErrors({});
     if (student) {
+      setSelectedStudent(student);
       setFormData({
         first_name: student.user.first_name,
         last_name: student.user.last_name,
         email: student.user.email,
         current_class_id: student.current_class ? student.current_class.id : null,
-        section: student.current_class?.section || '',
-        year: student.current_class?.academic_year || academicYears[0] || dayjs().year().toString(),
-        date_of_birth: '',
-        gender: '',
-        address: '',
-        phone_number: '',
-        emergency_contact: '',
-        emergency_contact_name: '',
-        is_active: true,
-        academic_status: student.academic_status,
-        blood_group: '',
-        allergies: '',
-        medical_conditions: '',
-        notes: '',
+        section: student.current_class ? student.current_class.section : '',
+        year: student.current_class ? student.current_class.academic_year : '',
+        date_of_birth: student.date_of_birth || '',
+        gender: student.gender || '',
+        address: student.address || '',
+        phone_number: student.phone_number || '',
+        emergency_contact: student.emergency_contact || '',
+        emergency_contact_name: student.emergency_contact_name || '',
+        is_active: student.is_active ?? true,
+        academic_status: student.academic_status || 'enrolled',
+        blood_group: student.blood_group || '',
+        allergies: student.allergies || '',
+        medical_conditions: student.medical_conditions || '',
+        notes: student.notes || '',
       });
-      setFormAcademicYear(student.current_class?.academic_year || academicYears[0] || '');
+      setFormAcademicYear(student.current_class ? student.current_class.academic_year : '');
+      if (student.current_class && student.current_class.academic_year) {
+        fetchClasses(student.current_class.academic_year);
+      }
     } else {
-      setFormData({ ...initialFormData, year: academicYears[0] || dayjs().year().toString() });
-      setFormAcademicYear(academicYears[0] || '');
+      setSelectedStudent(null);
+      setFormData(initialFormData);
+      setFormAcademicYear('');
     }
-    setSelectedStudent(student || null);
-    setCredentialsData(initialCredentialsData);
     setDialogOpen(true);
   };
 
@@ -289,6 +311,7 @@ const Students: React.FC = () => {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setFormErrors({}); // Clear previous errors
     const currentPageCount = totalPages;
     try {
       if (selectedStudent) {
@@ -313,7 +336,20 @@ const Students: React.FC = () => {
         fetchStudents(newPageCount, search);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save student.');
+      // Field-level error mapping
+      if (err.response && err.response.data && typeof err.response.data === 'object') {
+        const errors: { [key: string]: string } = {};
+        Object.entries(err.response.data).forEach(([field, messages]) => {
+          if (Array.isArray(messages)) {
+            errors[field] = messages[0];
+          } else if (typeof messages === 'string') {
+            errors[field] = messages;
+          }
+        });
+        setFormErrors(errors);
+      } else {
+        setError(err.response?.data?.message || 'Failed to save student.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -365,6 +401,9 @@ const Students: React.FC = () => {
           ))
         )}
       </Select>
+      {formErrors.current_class_id && (
+        <Typography color="error" variant="caption">{formErrors.current_class_id}</Typography>
+      )}
     </FormControl>
   );
 
@@ -393,6 +432,9 @@ const Students: React.FC = () => {
           <MenuItem key={year} value={year}>{year}</MenuItem>
         ))}
       </Select>
+      {formErrors.year && (
+        <Typography color="error" variant="caption">{formErrors.year}</Typography>
+      )}
     </FormControl>
   );
 
@@ -417,6 +459,9 @@ const Students: React.FC = () => {
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
         ))}
       </Select>
+      {formErrors.gender && (
+        <Typography color="error" variant="caption">{formErrors.gender}</Typography>
+      )}
     </FormControl>
   );
 
@@ -441,6 +486,9 @@ const Students: React.FC = () => {
           <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
         ))}
       </Select>
+      {formErrors.academic_status && (
+        <Typography color="error" variant="caption">{formErrors.academic_status}</Typography>
+      )}
     </FormControl>
   );
 
@@ -464,6 +512,9 @@ const Students: React.FC = () => {
           <MenuItem key={bg} value={bg}>{bg}</MenuItem>
         ))}
       </Select>
+      {formErrors.blood_group && (
+        <Typography color="error" variant="caption">{formErrors.blood_group}</Typography>
+      )}
     </FormControl>
   );
 
@@ -504,9 +555,6 @@ const Students: React.FC = () => {
             ))}
           </Select>
         </FormControl>
-      </Box>
-
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           variant="outlined"
           size="small"
@@ -516,9 +564,9 @@ const Students: React.FC = () => {
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           InputProps={{ startAdornment: <Search sx={{ mr: 1 }} /> }}
           InputLabelProps={{ shrink: true }}
-          sx={{ '& .MuiInputBase-root': { height: 40 } }}
+          sx={{ '& .MuiInputBase-root': { height: 40 }, minWidth: 250 }}
         />
-        <Button variant="outlined" onClick={handleSearch} disabled={loading}>
+        <Button variant="outlined" onClick={handleSearch} disabled={loading} sx={{ height: 40 }}>
           Search
         </Button>
       </Box>
@@ -547,9 +595,9 @@ const Students: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {(Array.isArray(students) ? students : []).map(student => (
+                    {(Array.isArray(students) ? students : []).map((student, index) => (
                       <TableRow key={student.id}>
-                        <TableCell>{student.id}</TableCell>
+                        <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
                         <TableCell>{student.user.first_name} {student.user.last_name}</TableCell>
                         <TableCell>{student.student_id}</TableCell>
                         <TableCell>
@@ -629,6 +677,8 @@ const Students: React.FC = () => {
                   required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.first_name}
+                  helperText={formErrors.first_name}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -642,6 +692,8 @@ const Students: React.FC = () => {
                   required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.last_name}
+                  helperText={formErrors.last_name}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -652,8 +704,11 @@ const Students: React.FC = () => {
                   fullWidth
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.email}
+                  helperText={formErrors.email}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -665,8 +720,11 @@ const Students: React.FC = () => {
                   fullWidth
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.date_of_birth}
+                  helperText={formErrors.date_of_birth}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -706,8 +764,11 @@ const Students: React.FC = () => {
                   fullWidth
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.address}
+                  helperText={formErrors.address}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -720,6 +781,8 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.phone_number}
+                  helperText={formErrors.phone_number}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -730,8 +793,11 @@ const Students: React.FC = () => {
                   fullWidth
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.emergency_contact}
+                  helperText={formErrors.emergency_contact}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -742,8 +808,11 @@ const Students: React.FC = () => {
                   fullWidth
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
+                  required
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.emergency_contact_name}
+                  helperText={formErrors.emergency_contact_name}
                 />
               </Grid>
             </Grid>
@@ -763,6 +832,8 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.allergies}
+                  helperText={formErrors.allergies}
                 />
               </Grid>
               <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}>
@@ -775,6 +846,8 @@ const Students: React.FC = () => {
                   InputLabelProps={{ shrink: true }}
                   variant="outlined"
                   sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                  error={!!formErrors.medical_conditions}
+                  helperText={formErrors.medical_conditions}
                 />
               </Grid>
               <Grid sx={{ gridColumn: 'span 12', display: 'flex', alignItems: 'center' }}>

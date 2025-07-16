@@ -142,8 +142,8 @@ class Student(models.Model):
         return None
 
     def save(self, *args, **kwargs):
-        if not self.student_id:
-            last = self.__class__.objects.order_by('-id').first()
-            next_id = 1 if not last else last.id + 1
-            self.student_id = f'STU{next_id:04d}'
+        # Always set student_id to the user's username if available
+        user_obj = self.user if hasattr(self.user, 'username') else None
+        if user_obj and user_obj.username:
+            self.student_id = user_obj.username
         super().save(*args, **kwargs)
