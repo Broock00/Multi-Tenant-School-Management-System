@@ -117,6 +117,7 @@ export const studentsAPI = {
   getActiveStudents: () => api.get('/students/active/'),
   getAcademicYears: () => api.get('/students/academic_years/'),
   createStudentWithCredentials: (data: any) => api.post('/students/create_with_credentials/', data),
+  changeStudentPassword: (id: number, password: string) => api.post(`/students/${id}/change_password/`, { password }),
 };
 
 // Classes API

@@ -31,6 +31,8 @@ import {
   InputAdornment,
   Pagination,
   Divider,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons-material';
@@ -45,6 +47,7 @@ interface Student {
     first_name: string;
     last_name: string;
     email: string;
+    username?: string; // Added for password change
   };
   student_id: string;
   current_class?: { id: number; name: string; section: string; academic_year: string } | null;
@@ -158,11 +161,15 @@ const Students: React.FC = () => {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('');
   const [formAcademicYear, setFormAcademicYear] = useState<string>('');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(12);
+  const [pageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
+  const [editTab, setEditTab] = useState(0);
+  const [passwordForm, setPasswordForm] = useState({ password: '', confirm: '' });
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
@@ -369,6 +376,35 @@ const Students: React.FC = () => {
       } catch (err) {
         setError('Failed to delete student.');
       }
+    }
+  };
+
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setEditTab(newValue);
+  };
+  const handlePasswordFormChange = (field: 'password' | 'confirm', value: string) => {
+    setPasswordForm(prev => ({ ...prev, [field]: value }));
+    setPasswordError('');
+    setPasswordSuccess('');
+  };
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+    if (!passwordForm.password || !passwordForm.confirm) {
+      setPasswordError('Both fields are required.');
+      return;
+    }
+    if (passwordForm.password !== passwordForm.confirm) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+    try {
+      await studentsAPI.changeStudentPassword(selectedStudent!.id, passwordForm.password);
+      setPasswordSuccess('Password updated successfully.');
+      setPasswordForm({ password: '', confirm: '' });
+    } catch (err: any) {
+      setPasswordError(err.response?.data?.detail || 'Failed to update password.');
     }
   };
 
@@ -659,7 +695,13 @@ const Students: React.FC = () => {
       {/* Student Form Dialog */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>{selectedStudent ? 'Edit Student' : 'Add Student'}</DialogTitle>
-        <form onSubmit={handleFormSubmit}>
+        {selectedStudent ? (
+          <Tabs value={editTab} onChange={handleTabChange} sx={{ px: 3, pt: 1 }}>
+            <Tab label="Main Information" />
+            <Tab label="Password Change" />
+          </Tabs>
+        ) : null}
+        <form onSubmit={handleFormSubmit} style={{ display: editTab === 0 ? 'block' : 'none' }}>
           <DialogContent sx={{ py: 3 }}>
             <Typography variant="h6" gutterBottom>
               Personal Information
@@ -890,6 +932,52 @@ const Students: React.FC = () => {
             </Button>
           </DialogActions>
         </form>
+        {selectedStudent && (
+          <form onSubmit={handlePasswordChange} style={{ display: editTab === 1 ? 'block' : 'none' }}>
+            <DialogContent sx={{ py: 3 }}>
+              <Typography variant="h6" gutterBottom>Change Password</Typography>
+              <Divider sx={{ mb: 2 }} />
+              <TextField
+                label="Username"
+                value={selectedStudent.user?.username || ''}
+                fullWidth
+                margin="normal"
+                InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                sx={{ '& .MuiInputBase-root': { height: 56 } }}
+                InputProps={{ readOnly: true }}
+              />
+              <TextField
+                label="New Password"
+                type="password"
+                value={passwordForm.password}
+                onChange={e => handlePasswordFormChange('password', e.target.value)}
+                fullWidth
+                margin="normal"
+                required
+                variant="outlined"
+                sx={{ '& .MuiInputBase-root': { height: 56 } }}
+              />
+              <TextField
+                label="Confirm Password"
+                type="password"
+                value={passwordForm.confirm}
+                onChange={e => handlePasswordFormChange('confirm', e.target.value)}
+                fullWidth
+                margin="normal"
+                required
+                variant="outlined"
+                sx={{ '& .MuiInputBase-root': { height: 56 } }}
+              />
+              {passwordError && <Alert severity="error" sx={{ mt: 2 }}>{passwordError}</Alert>}
+              {passwordSuccess && <Alert severity="success" sx={{ mt: 2 }}>{passwordSuccess}</Alert>}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button onClick={handleCloseDialog} variant="outlined">Cancel</Button>
+              <Button variant="contained" type="submit">Change Password</Button>
+            </DialogActions>
+          </form>
+        )}
       </Dialog>
 
       {/* Credentials Dialog */}
