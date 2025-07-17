@@ -8,6 +8,8 @@ from .serializers import StudentSerializer, StudentListSerializer, StudentCreate
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from classes.models import Class
 from rest_framework import filters
+from django.contrib.auth.password_validation import validate_password
+import re
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -244,3 +246,38 @@ class StudentViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset().filter(is_active=True)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='change_password')
+    def change_password(self, request, pk=None):
+        """
+        Change the password for a student user.
+        Only super_admin, school_admin, secretary can change any student's password.
+        Students can only change their own password.
+        Password must be at least 8 characters, contain at least one letter and one number.
+        """
+        student = self.get_object()
+        user = student.user
+        req_user = request.user
+        password = request.data.get('password')
+        # Permission check
+        if req_user.role in ['super_admin', 'school_admin', 'secretary']:
+            pass  # allowed
+        elif req_user.role == 'student':
+            if user != req_user:
+                return Response({'detail': 'You can only change your own password.'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'You do not have permission to change this password.'}, status=status.HTTP_403_FORBIDDEN)
+        # Validation
+        if not password:
+            return Response({'detail': 'Password is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(password) < 8:
+            return Response({'detail': 'Password must be at least 8 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not re.search(r'[A-Za-z]', password) or not re.search(r'\d', password):
+            return Response({'detail': 'Password must contain at least one letter and one number.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_password(password, user=user)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(password)
+        user.save()
+        return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
