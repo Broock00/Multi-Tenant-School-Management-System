@@ -61,15 +61,24 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             target_roles = announcement.target_audience
             users = User.objects.none()
             
-            if 'all' in target_roles:
-                # Send to both super admins and school admins
-                users = User.objects.filter(role__in=['super_admin', 'school_admin'])
-            elif 'super_admin' in target_roles:
-                # Send only to super admins
-                users = User.objects.filter(role='super_admin')
-            elif 'school_admin' in target_roles:
-                # Send only to school admins
-                users = User.objects.filter(role='school_admin')
+            # School admin: only notify users in their school
+            if self.request.user.role == 'school_admin':
+                school_id = self.request.user.school_id
+                if 'all' in target_roles:
+                    users = User.objects.filter(school_id=school_id, role__in=['secretary', 'teacher', 'student', 'school_admin'])
+                else:
+                    users = User.objects.filter(school_id=school_id, role__in=target_roles)
+            else:
+                # Super admin logic (unchanged)
+                if 'all' in target_roles:
+                    # Send to both super admins and school admins
+                    users = User.objects.filter(role__in=['super_admin', 'school_admin'])
+                elif 'super_admin' in target_roles:
+                    # Send only to super admins
+                    users = User.objects.filter(role='super_admin')
+                elif 'school_admin' in target_roles:
+                    # Send only to school admins
+                    users = User.objects.filter(role='school_admin')
             
             print(f"Creating notifications for {users.count()} users based on target_audience {target_roles}: {list(users.values_list('username', 'role'))}")
             

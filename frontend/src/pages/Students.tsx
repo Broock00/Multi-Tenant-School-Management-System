@@ -39,6 +39,9 @@ import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons
 import { studentsAPI, classesAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import dayjs from 'dayjs';
+import Avatar from '@mui/material/Avatar';
+import { deepPurple, deepOrange, blue, green, pink, teal } from '@mui/material/colors';
+import { PieChart } from '@mui/x-charts/PieChart';
 
 interface Student {
   id: number;
@@ -48,6 +51,7 @@ interface Student {
     last_name: string;
     email: string;
     username?: string; // Added for password change
+    profile_picture?: string; // Added for profile picture/avatar
   };
   student_id: string;
   current_class?: { id: number; name: string; section: string; academic_year: string } | null;
@@ -170,6 +174,29 @@ const Students: React.FC = () => {
   const [passwordForm, setPasswordForm] = useState({ password: '', confirm: '' });
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [selectedViewStudent, setSelectedViewStudent] = useState<Student | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [detailsTab, setDetailsTab] = useState(0);
+  const [activityStatusFilter, setActivityStatusFilter] = useState<'All' | 'Present' | 'Absent'>('All');
+
+  // Mock data for activities, assessments, and payments
+  const mockActivities = [
+    { date: '2024-06-01', activity: 'Attended Math class', status: 'Present' },
+    { date: '2024-06-02', activity: 'Attended Science class', status: 'Absent' },
+  ];
+  // Attendance summary for pie chart (mock)
+  const attendanceSummary = [
+    { id: 0, value: 8, label: 'Present' },
+    { id: 1, value: 2, label: 'Absent' },
+  ];
+  const mockAssessments = [
+    { subject: 'Math', type: 'Exam', score: 85, total: 100, date: '2024-06-10' },
+    { subject: 'Science', type: 'Assignment', score: 18, total: 20, date: '2024-06-12' },
+  ];
+  const mockPayments = [
+    { month: 'June 2024', status: 'Paid', amount: 100 },
+    { month: 'May 2024', status: 'Pending', amount: 100 },
+  ];
 
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
@@ -632,7 +659,18 @@ const Students: React.FC = () => {
                   </TableHead>
                   <TableBody>
                     {(Array.isArray(students) ? students : []).map((student, index) => (
-                      <TableRow key={student.id}>
+                      <TableRow
+                        key={student.id}
+                        hover
+                        sx={{ cursor: 'pointer' }}
+                        onClick={e => {
+                          // Prevent opening view dialog when clicking action icons
+                          if ((e.target as HTMLElement).closest('button')) return;
+                          setSelectedViewStudent(student);
+                          setViewDialogOpen(true);
+                          setDetailsTab(0);
+                        }}
+                      >
                         <TableCell>{(page - 1) * pageSize + index + 1}</TableCell>
                         <TableCell>{student.user.first_name} {student.user.last_name}</TableCell>
                         <TableCell>{student.student_id}</TableCell>
@@ -658,12 +696,12 @@ const Students: React.FC = () => {
                         {canManage && (
                           <TableCell>
                             <Tooltip title="Edit">
-                              <IconButton onClick={() => handleOpenDialog(student)}>
+                              <IconButton onClick={e => { e.stopPropagation(); handleOpenDialog(student); }}>
                                 <Edit />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Delete">
-                              <IconButton onClick={() => handleDelete(student)}>
+                              <IconButton onClick={e => { e.stopPropagation(); handleDelete(student); }}>
                                 <Delete />
                               </IconButton>
                             </Tooltip>
@@ -1033,8 +1071,191 @@ const Students: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Student Details Dialog */}
+      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Student Details</DialogTitle>
+        <DialogContent sx={{ py: 3 }}>
+          {selectedViewStudent && (
+            <Box>
+              <Tabs value={detailsTab} onChange={(_e, v) => setDetailsTab(v)} sx={{ mb: 2 }}>
+                <Tab label="Info" />
+                <Tab label="Activities" />
+                <Tab label="Assessments" />
+                <Tab label="Payments" />
+              </Tabs>
+              {detailsTab === 0 && (
+                <Box>
+                  <Typography variant="h6" sx={{ mb: 2 }}>Personal & Academic Info</Typography>
+                  <Divider sx={{ mb: 2 }} />
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 4, mb: 2 }}>
+                    {/* Profile Image/Avatar */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 120 }}>
+                      {selectedViewStudent.user.profile_picture ? (
+                        <Avatar
+                          src={selectedViewStudent.user.profile_picture}
+                          alt={selectedViewStudent.user.first_name + ' ' + selectedViewStudent.user.last_name}
+                          sx={{ width: 96, height: 96, mb: 1 }}
+                        />
+                      ) : (
+                        <Avatar
+                          sx={{ width: 96, height: 96, mb: 1, bgcolor: getAvatarColor(selectedViewStudent.user.id) }}
+                        >
+                          {selectedViewStudent.user.first_name?.[0] || ''}{selectedViewStudent.user.last_name?.[0] || ''}
+                        </Avatar>
+                      )}
+                      <Button size="small" variant="outlined" sx={{ mt: 1 }} disabled>
+                        Upload Image
+                      </Button>
+                    </Box>
+                    {/* Info Columns */}
+                    <Grid container spacing={2} sx={{ flex: 1 }}>
+                      <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography><b>Name:</b> {selectedViewStudent.user.first_name} {selectedViewStudent.user.last_name}</Typography>
+                        <Typography><b>Email:</b> {selectedViewStudent.user.email}</Typography>
+                        <Typography><b>Student ID:</b> {selectedViewStudent.student_id}</Typography>
+                        <Typography><b>Username:</b> {selectedViewStudent.user.username || '-'}</Typography>
+                        <Typography><b>Date of Birth:</b> {selectedViewStudent.date_of_birth || '-'}</Typography>
+                        <Typography><b>Gender:</b> {selectedViewStudent.gender || '-'}</Typography>
+                        <Typography><b>Blood Group:</b> {selectedViewStudent.blood_group || '-'}</Typography>
+                      </Grid>
+                      <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography><b>Class:</b> {selectedViewStudent.current_class ? `${selectedViewStudent.current_class.name}${selectedViewStudent.current_class.section ? ' - ' + selectedViewStudent.current_class.section : ''} (${selectedViewStudent.current_class.academic_year})` : '-'}</Typography>
+                        <Typography><b>Academic Status:</b> {selectedViewStudent.academic_status}</Typography>
+                        <Typography><b>Payment Status:</b> {selectedViewStudent.payment_status === 'paid' ? 'Paid' : 'Pending'}</Typography>
+                        <Typography><b>Phone Number:</b> {selectedViewStudent.phone_number || '-'}</Typography>
+                        <Typography><b>Address:</b> {selectedViewStudent.address || '-'}</Typography>
+                        <Typography><b>Emergency Contact:</b> {selectedViewStudent.emergency_contact || '-'}</Typography>
+                        <Typography><b>Emergency Contact Name:</b> {selectedViewStudent.emergency_contact_name || '-'}</Typography>
+                      </Grid>
+                    </Grid>
+                  </Box>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>Additional Information</Typography>
+                  <Grid container spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
+                    <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}><b>Allergies:</b> {selectedViewStudent.allergies || '-'}</Grid>
+                    <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', alignItems: 'center' }}><b>Medical Conditions:</b> {selectedViewStudent.medical_conditions || '-'}</Grid>
+                    <Grid sx={{ gridColumn: 'span 12', display: 'flex', alignItems: 'center' }}><b>Notes:</b> {selectedViewStudent.notes || '-'}</Grid>
+                  </Grid>
+                </Box>
+              )}
+              {detailsTab === 1 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>Class Activities</Typography>
+                  <Box sx={{ maxWidth: 300, mb: 2 }}>
+                    <PieChart
+                      series={[{
+                        data: attendanceSummary,
+                        innerRadius: 40,
+                        outerRadius: 80,
+                        paddingAngle: 2,
+                      }]}
+                      width={300}
+                      height={200}
+                    />
+                  </Box>
+                  {/* Filter for Present/Absent */}
+                  <Box sx={{ mb: 2, maxWidth: 200 }}>
+                    <TextField
+                      select
+                      label="Filter by Status"
+                      value={activityStatusFilter}
+                      onChange={e => setActivityStatusFilter(e.target.value as 'All' | 'Present' | 'Absent')}
+                      size="small"
+                      fullWidth
+                    >
+                      <MenuItem value="All">All</MenuItem>
+                      <MenuItem value="Present">Present</MenuItem>
+                      <MenuItem value="Absent">Absent</MenuItem>
+                    </TextField>
+                  </Box>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Date</TableCell>
+                        <TableCell>Activity</TableCell>
+                        <TableCell>Status</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mockActivities
+                        .filter(a => activityStatusFilter === 'All' || a.status === activityStatusFilter)
+                        .map((a, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{a.date}</TableCell>
+                            <TableCell>{a.activity}</TableCell>
+                            <TableCell>{a.status}</TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </Box>
+              )}
+              {detailsTab === 2 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>Assessment Results</Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Subject</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Score</TableCell>
+                        <TableCell>Total</TableCell>
+                        <TableCell>Date</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mockAssessments.map((a, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{a.subject}</TableCell>
+                          <TableCell>{a.type}</TableCell>
+                          <TableCell>{a.score}</TableCell>
+                          <TableCell>{a.total}</TableCell>
+                          <TableCell>{a.date}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
+              )}
+              {detailsTab === 3 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>Payment Information</Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Month</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Amount</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mockPayments.map((p, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{p.month}</TableCell>
+                          <TableCell>{p.status}</TableCell>
+                          <TableCell>{p.amount}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setViewDialogOpen(false)} variant="contained">Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
+
+// Helper for avatar color
+function getAvatarColor(id: number) {
+  const colors = [deepPurple[500], deepOrange[500], blue[500], green[500], pink[500], teal[500]];
+  return colors[id % colors.length];
+}
 
 export default Students;

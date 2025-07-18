@@ -25,6 +25,19 @@ class NotificationSerializer(serializers.ModelSerializer):
         return None 
 
 class AnnouncementSerializer(serializers.ModelSerializer):
+    author_info = serializers.SerializerMethodField()
+
     class Meta:
         model = Announcement
-        fields = '__all__' 
+        fields = '__all__'
+        # Optionally, you can add 'author_info' explicitly if not using '__all__'
+
+    def get_author_info(self, obj):
+        if obj.author:
+            return {
+                'id': obj.author.id,
+                'username': obj.author.username,
+                'full_name': obj.author.get_full_name(),
+                'role': obj.author.role,
+            }
+        return None 

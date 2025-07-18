@@ -46,10 +46,11 @@ interface AnnouncementItem {
   content: string;
   type: 'info' | 'warning' | 'error' | 'success';
   priority: 'low' | 'medium' | 'high';
-  author: string;
+  author: string | number;
+  author_info?: { id: number; username: string; full_name: string; role: string };
   created_at: string;
   is_active: boolean;
-  target_audience: string;
+  target_audience: string[];
   school?: number;
 }
 
@@ -58,7 +59,7 @@ interface FormData {
   content: string;
   type: 'info' | 'warning' | 'error' | 'success';
   priority: 'low' | 'medium' | 'high';
-  target_audience: string;
+  target_audience: string[];
 }
 
 interface TargetAudienceOption {
@@ -83,7 +84,7 @@ const Announcements: React.FC = () => {
     content: '',
     type: 'info',
     priority: 'medium',
-    target_audience: 'all',
+    target_audience: ['all'],
   });
   const [announcementPage, setAnnouncementPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
@@ -203,7 +204,7 @@ const Announcements: React.FC = () => {
         content: announcement.content,
         type: announcement.type,
         priority: announcement.priority,
-        target_audience: announcement.target_audience,
+        target_audience: Array.isArray(announcement.target_audience) ? announcement.target_audience : [announcement.target_audience],
       });
     } else {
       setEditingAnnouncement(null);
@@ -212,7 +213,7 @@ const Announcements: React.FC = () => {
         content: '',
         type: 'info',
         priority: 'medium',
-        target_audience: 'all',
+        target_audience: ['all'],
       });
     }
     setOpenDialog(true);
@@ -226,11 +227,12 @@ const Announcements: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const currentPageCount = Math.ceil(getFilteredAnnouncements().length / ITEMS_PER_PAGE);
+      const payload = { ...formData, target_audience: formData.target_audience };
       if (editingAnnouncement) {
-        await api.put(`/notifications/announcements/${editingAnnouncement.id}/`, formData);
+        await api.put(`/notifications/announcements/${editingAnnouncement.id}/`, payload);
         setSnackbar({ open: true, message: 'Announcement updated successfully', severity: 'success' });
       } else {
-        await api.post('/notifications/announcements/', formData);
+        await api.post('/notifications/announcements/', payload);
         setSnackbar({ open: true, message: 'Announcement created successfully', severity: 'success' });
       }
       await fetchAnnouncements();
@@ -295,25 +297,37 @@ const Announcements: React.FC = () => {
   // Filter announcements based on user role and target audience
   const getFilteredAnnouncements = () => {
     if (!user) return [];
-    console.log('Filtering announcements with user role:', user.role, 'school:', user.school);
-    const filtered = announcements.filter(announcement => {
+    const schoolAdminAudiences = ['all', 'secretary', 'teacher', 'student', 'school_admin'];
+    return announcements.filter(announcement => {
+      // Support both string and array for backward compatibility
+      const ta = announcement.target_audience;
       if (user.role === 'super_admin') return true;
       if (user.role === 'school_admin') {
-        return (
-          announcement.target_audience === 'school_admin' ||
-          announcement.target_audience === 'all' ||
-          (announcement.school && announcement.school === user.school)
-        );
+        if (Array.isArray(ta)) {
+          return ta.some(aud => schoolAdminAudiences.includes(aud));
+        } else {
+          return schoolAdminAudiences.includes(ta);
+        }
       }
-      return announcement.target_audience === user.role || announcement.target_audience === 'all';
+      if (Array.isArray(ta)) {
+        return ta.includes(user.role) || ta.includes('all');
+      } else {
+        return ta === user.role || ta === 'all';
+      }
     });
-    console.log('Filtered announcements:', filtered);
-    return filtered;
   };
 
   // Get available target audience options based on user role
   const getTargetAudienceOptions = (): TargetAudienceOption[] => {
     if (!user) return [];
+    if (user.role === 'school_admin') {
+      return [
+        { value: 'all', label: 'All (Secretaries, Teachers, Students)' },
+        { value: 'secretary', label: 'Secretaries' },
+        { value: 'teacher', label: 'Teachers' },
+        { value: 'student', label: 'Students' },
+      ];
+    }
     return [
       { value: 'all', label: 'All Users' },
       { value: 'super_admin', label: 'Super Admins' },
@@ -410,7 +424,7 @@ const Announcements: React.FC = () => {
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: '0.875rem', color: 'text.secondary' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                               <Person sx={{ fontSize: 16, mr: 0.5 }} />
-                              {announcement.author}
+                              {announcement.author_info?.full_name || announcement.author_info?.username || announcement.author}
                             </Box>
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
                               <Schedule sx={{ fontSize: 16, mr: 0.5 }} />
@@ -510,8 +524,15 @@ const Announcements: React.FC = () => {
               <FormControl fullWidth margin="normal">
                 <InputLabel>Target Audience</InputLabel>
                 <Select
-                  value={formData.target_audience}
-                  onChange={(e) => setFormData(prev => ({ ...prev, target_audience: e.target.value as string }))}
+                  value={formData.target_audience[0]}
+                  onChange={e => {
+                    const selected = e.target.value as string;
+                    // Always include 'school_admin' in the target audience for school admins (except when 'all' is selected)
+                    setFormData(prev => ({
+                      ...prev,
+                      target_audience: selected === 'all' ? ['all'] : [selected, 'school_admin'],
+                    }));
+                  }}
                   label="Target Audience"
                 >
                   {getTargetAudienceOptions().map((option: TargetAudienceOption) => (
