@@ -21,6 +21,7 @@ import Settings from './pages/Settings';
 import Subscriptions from './pages/Subscriptions';
 import Announcements from './pages/Announcements';
 import SystemChat from './pages/SystemChat';
+import Secretaries from './pages/Secretaries';
 
 // Create theme
 const theme = createTheme({
@@ -300,6 +301,18 @@ function App() {
                     <Layout>
                       <SystemChat />
                     </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/secretaries"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal']}>
+                      <Layout>
+                        <Secretaries />
+                      </Layout>
+                    </RoleRoute>
                   </ProtectedRoute>
                 }
               />

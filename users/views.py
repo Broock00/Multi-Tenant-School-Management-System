@@ -190,11 +190,18 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
-        """Create a new user with plan enforcement for teachers and secretaries"""
+        """Create a new user with plan enforcement for teachers and secretaries, and restrict secretary creation to school admins only."""
         user = request.user
         school = user.school
         plan = school.current_subscription.plan if school and school.current_subscription else None
         role = request.data.get('role')
+        # Restrict secretary creation
+        if role == 'secretary':
+            if user.role != User.UserRole.SCHOOL_ADMIN:
+                return Response({'detail': 'Only school admins can create secretaries.'}, status=status.HTTP_403_FORBIDDEN)
+        # Prevent secretaries from creating any users
+        if user.role == User.UserRole.SECRETARY:
+            return Response({'detail': 'Secretaries are not allowed to create users.'}, status=status.HTTP_403_FORBIDDEN)
         if plan and school:
             if role == 'teacher' and school.user_set.filter(role='teacher').count() >= plan.max_teachers:
                 raise ValidationError("Teacher limit reached for your subscription plan.")
@@ -468,3 +475,42 @@ class ParentViewSet(viewsets.ModelViewSet):
     """Parent management viewset"""
     queryset = Parent.objects.all()
     serializer_class = ParentSerializer
+
+
+class SecretaryViewSet(viewsets.ModelViewSet):
+    """Secretary management viewset"""
+    queryset = User.objects.filter(role=User.UserRole.SECRETARY)
+    serializer_class = UserSerializer
+    pagination_class = PageNumberPagination
+    ordering_fields = ['username', 'first_name', 'last_name', 'email', 'created_at']
+    ordering = ['first_name', 'last_name']
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == User.UserRole.SUPER_ADMIN:
+            return User.objects.filter(role=User.UserRole.SECRETARY)
+        elif user.role == User.UserRole.SCHOOL_ADMIN:
+            return User.objects.filter(role=User.UserRole.SECRETARY, school=user.school)
+        elif user.role == User.UserRole.SECRETARY:
+            return User.objects.filter(id=user.id)
+        return User.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role == User.UserRole.SECRETARY:
+            return Response({'detail': 'Secretaries cannot create secretaries.'}, status=403)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if request.user.role == User.UserRole.SECRETARY:
+            return Response({'detail': 'Secretaries cannot update secretaries.'}, status=403)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if request.user.role == User.UserRole.SECRETARY:
+            return Response({'detail': 'Secretaries cannot update secretaries.'}, status=403)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role == User.UserRole.SECRETARY:
+            return Response({'detail': 'Secretaries cannot delete secretaries.'}, status=403)
+        return super().destroy(request, *args, **kwargs)

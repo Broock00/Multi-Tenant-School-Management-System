@@ -14,6 +14,7 @@ from students.models import Student
 from classes.models import Class
 from django.utils import timezone
 from notifications.models import Notification as NotificationModel, Announcement
+from rest_framework.exceptions import PermissionDenied
 
 # Create your views here.
 
@@ -24,42 +25,57 @@ class ChatRoomViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter chat rooms based on user role"""
+        """Filter chat rooms based on user role, restricting secretaries from chatting with super admins, but allowing school admins of the same school."""
         user = self.request.user
-        
+        qs = ChatRoom.objects.all()
         if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
-            return ChatRoom.objects.all()
+            return qs
+        elif user.role == user.UserRole.SECRETARY:
+            # Secretaries: can only see rooms where all participants are not super admins, and if school admin is present, must be from the same school
+            return qs.filter(
+                participants__role__in=[user.UserRole.SECRETARY, user.UserRole.SCHOOL_ADMIN, user.UserRole.TEACHER, user.UserRole.STUDENT, user.UserRole.PARENT, user.UserRole.ACCOUNTANT, user.UserRole.LIBRARIAN, user.UserRole.NURSE, user.UserRole.SECURITY],
+                participants__school=user.school
+            ).exclude(participants__role=user.UserRole.SUPER_ADMIN).distinct()
         elif user.role == user.UserRole.TEACHER:
             try:
                 teacher = user.teacher_profile
-                # Teachers can see rooms they're part of or rooms with their students
-                return ChatRoom.objects.filter(
+                return qs.filter(
                     Q(participants=user) |
                     Q(room_type='class', class_obj__subjects__teacher=teacher) |
                     Q(room_type='teacher_student', teacher=teacher)
                 ).distinct()
             except:
-                return ChatRoom.objects.filter(participants=user)
+                return qs.filter(participants=user)
         elif user.role == user.UserRole.STUDENT:
             try:
                 student = user.student_profile
-                # Students can see rooms they're part of or their class rooms
-                return ChatRoom.objects.filter(
+                return qs.filter(
                     Q(participants=user) |
                     Q(room_type='class', class_obj=student.current_class) |
                     Q(room_type='teacher_student', student=student)
                 ).distinct()
             except:
-                return ChatRoom.objects.filter(participants=user)
-        
-        return ChatRoom.objects.filter(participants=user)
+                return qs.filter(participants=user)
+        return qs.filter(participants=user)
+    
+    def perform_create(self, serializer):
+        user = self.request.user
+        participants = self.request.data.get('participants', [])
+        # Prevent secretaries from creating rooms with super admins
+        if user.role == user.UserRole.SECRETARY:
+            super_admins = User.objects.filter(id__in=participants, role=User.UserRole.SUPER_ADMIN)
+            if super_admins.exists():
+                raise PermissionDenied('Secretaries cannot create chat rooms with system admins.')
+        return super().perform_create(serializer)
     
     @action(detail=True, methods=['post'])
     def join(self, request, pk=None):
         """Join a chat room"""
         room = self.get_object()
         user = request.user
-        
+        # Prevent secretaries from joining rooms with super admins
+        if user.role == user.UserRole.SECRETARY and room.participants.filter(role=User.UserRole.SUPER_ADMIN).exists():
+            return Response({'detail': 'Secretaries cannot join chat rooms with system admins.'}, status=403)
         if user not in room.participants.all():
             room.participants.add(user)
             return Response({'message': 'Successfully joined the room'})

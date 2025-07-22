@@ -88,7 +88,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { text: 'Classes', icon: <ClassIcon />, path: '/classes' },
           { text: 'Class Assignments', icon: <AssignmentIcon />, path: '/class-assignments' },
           { text: 'Announcements', icon: <NotificationsIcon />, path: '/announcements' },
-          { text: 'Secretary', icon: <PeopleIcon />, path: '/users' },
+          { text: 'Secretaries', icon: <PeopleIcon />, path: '/secretaries' },
           { text: 'Fees', icon: <PaymentIcon />, path: '/fees' },
           { text: 'Chat', icon: <ChatIcon />, path: '/chat' },
         ];
@@ -104,6 +104,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         return [
           { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
           { text: 'Students', icon: <PeopleIcon />, path: '/students' },
+          { text: 'Teachers', icon: <PeopleIcon />, path: '/teachers' },
+          { text: 'Classes', icon: <ClassIcon />, path: '/classes' },
+          { text: 'Class Assignments', icon: <AssignmentIcon />, path: '/class-assignments' },
+          { text: 'Announcements', icon: <NotificationsIcon />, path: '/announcements' },
+          { text: 'Secretaries', icon: <PeopleIcon />, path: '/secretaries' }, // read-only
           { text: 'Fees', icon: <PaymentIcon />, path: '/fees' },
           { text: 'Chat', icon: <ChatIcon />, path: '/chat' },
         ];

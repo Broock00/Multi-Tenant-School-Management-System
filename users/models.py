@@ -9,6 +9,7 @@ class User(AbstractUser):
     class UserRole(models.TextChoices):
         SUPER_ADMIN = 'super_admin', _('Super Admin')
         SCHOOL_ADMIN = 'school_admin', _('School Admin')
+        SECRETARY = 'secretary', _('Secretary')
         PRINCIPAL = 'principal', _('Principal')
         TEACHER = 'teacher', _('Teacher')
         STUDENT = 'student', _('Student')
