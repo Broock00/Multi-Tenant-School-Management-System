@@ -29,8 +29,7 @@ class AnnouncementSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Announcement
-        fields = '__all__'
-        # Optionally, you can add 'author_info' explicitly if not using '__all__'
+        fields = '__all__'  # school will now be included automatically
 
     def get_author_info(self, obj):
         if obj.author:

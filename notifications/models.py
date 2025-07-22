@@ -51,6 +51,7 @@ class Announcement(models.Model):
     type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='info')
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     author = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, related_name='announcements')
+    school = models.ForeignKey('schools.School', on_delete=models.CASCADE, null=True, blank=True, related_name='announcements')
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     target_audience = models.JSONField(default=list)  # List of roles or 'all'

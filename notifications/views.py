@@ -53,8 +53,23 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
     serializer_class = AnnouncementSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        qs = Announcement.objects.all()
+        if hasattr(user, 'role'):
+            if user.role in ['super_admin', 'system_admin']:
+                return qs.filter(school__isnull=True)
+            elif user.role in ['school_admin', 'secretary', 'teacher', 'student']:
+                return qs.filter(school=user.school)
+        return qs.none()
+
     def perform_create(self, serializer):
-        announcement = serializer.save(author=self.request.user)
+        # Set the school field if the creator is a school admin or secretary
+        user = self.request.user
+        school = None
+        if hasattr(user, 'role') and user.role in ['school_admin', 'secretary']:
+            school = getattr(user, 'school', None)
+        announcement = serializer.save(author=user, school=school)
         
         try:
             # Get target audience from the announcement
@@ -62,8 +77,8 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             users = User.objects.none()
             
             # School admin: only notify users in their school
-            if self.request.user.role == 'school_admin':
-                school_id = self.request.user.school_id
+            if user.role == 'school_admin':
+                school_id = user.school_id
                 if 'all' in target_roles:
                     users = User.objects.filter(school_id=school_id, role__in=['secretary', 'teacher', 'student', 'school_admin'])
                 else:
