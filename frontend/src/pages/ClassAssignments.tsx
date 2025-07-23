@@ -225,6 +225,16 @@ const ClassAssignments: React.FC = () => {
     return subjects.filter(subject => !assignedSubjectIds.includes(subject.id));
   };
 
+  // Helper to get subjects for edit dialog, ensuring the current subject is present
+  const getSubjectsForEdit = () => {
+    if (!selectedClassSubject) return subjects;
+    const subjectExists = subjects.some(s => s.id === selectedClassSubject.subject.id);
+    if (!subjectExists) {
+      return [...subjects, selectedClassSubject.subject];
+    }
+    return subjects;
+  };
+
   if (loading && classSubjects.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -473,7 +483,7 @@ const ClassAssignments: React.FC = () => {
               label="Subject"
               disabled
             >
-              {subjects.map((subject) => (
+              {getSubjectsForEdit().map((subject) => (
                 <MenuItem key={subject.id} value={subject.id}>
                   {subject.name} ({subject.code})
                 </MenuItem>

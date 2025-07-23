@@ -320,7 +320,7 @@ const Announcements: React.FC = () => {
   // Get available target audience options based on user role
   const getTargetAudienceOptions = (): TargetAudienceOption[] => {
     if (!user) return [];
-    if (user.role === 'school_admin') {
+    if (user.role === 'school_admin' || user.role === 'secretary') {
       return [
         { value: 'all', label: 'All (Secretaries, Teachers, Students)' },
         { value: 'secretary', label: 'Secretaries' },
@@ -357,7 +357,7 @@ const Announcements: React.FC = () => {
           <Announcement sx={{ mr: 1, verticalAlign: 'middle' }} />
           System Announcements
         </Typography>
-        {(user?.role === 'super_admin' || user?.role === 'school_admin') && (
+        {(user?.role === 'super_admin' || user?.role === 'school_admin' || user?.role === 'secretary') && (
           <Button
             variant="contained"
             startIcon={<Add />}

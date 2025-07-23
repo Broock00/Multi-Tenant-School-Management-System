@@ -248,7 +248,7 @@ class TeacherViewSet(viewsets.ModelViewSet):
         
         if user.role == User.UserRole.SUPER_ADMIN:
             queryset = Teacher.objects.all()
-        elif user.role in [User.UserRole.SCHOOL_ADMIN, User.UserRole.PRINCIPAL]:
+        elif user.role in [User.UserRole.SCHOOL_ADMIN, User.UserRole.PRINCIPAL, User.UserRole.SECRETARY]:
             queryset = Teacher.objects.filter(user__school=user.school)
         elif user.role == User.UserRole.TEACHER:
             queryset = Teacher.objects.filter(user=user)

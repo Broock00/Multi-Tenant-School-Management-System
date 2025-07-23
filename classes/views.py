@@ -32,7 +32,7 @@ class ClassViewSet(viewsets.ModelViewSet):
         
         if user.role == user.UserRole.SUPER_ADMIN:
             queryset = Class.objects.all()
-        elif user.role in [user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+        elif user.role in [user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.SECRETARY]:
             queryset = Class.objects.filter(school=user.school)
         elif user.role == user.UserRole.TEACHER:
             try:
@@ -114,7 +114,7 @@ class ClassViewSet(viewsets.ModelViewSet):
         user = request.user
         
         # Check permissions
-        if user.role not in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
+        if user.role not in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.SECRETARY]:
             return Response({'error': 'Only administrators can auto-generate classes'}, 
                           status=status.HTTP_403_FORBIDDEN)
         
@@ -221,25 +221,17 @@ class ClassSubjectViewSet(viewsets.ModelViewSet):
     ordering = ['class_obj__name', 'subject__name']
     
     def get_queryset(self):
-        """Filter class subjects based on user role"""
         user = self.request.user
-        
-        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL]:
-            return ClassSubject.objects.all()
+        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.SECRETARY]:
+            return ClassSubject.objects.filter(class_obj__school=user.school)
         elif user.role == user.UserRole.TEACHER:
             try:
                 teacher = user.teacher_profile
                 return ClassSubject.objects.filter(teacher=teacher)
             except:
                 return ClassSubject.objects.none()
-        elif user.role == user.UserRole.STUDENT:
-            try:
-                student = user.student_profile
-                if student.current_class:
-                    return ClassSubject.objects.filter(class_obj=student.current_class)
-            except:
-                pass
-        return ClassSubject.objects.none()
+        else:
+            return ClassSubject.objects.none()
     
     @action(detail=False, methods=['get'])
     def by_class(self, request):

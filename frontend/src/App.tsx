@@ -152,7 +152,7 @@ function App() {
                 path="/students"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'secretary']}>
                       <Layout>
                         <Students />
                       </Layout>
@@ -164,7 +164,7 @@ function App() {
                 path="/teachers"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'secretary']}>
                       <Layout>
                         <Teachers />
                       </Layout>
@@ -176,7 +176,7 @@ function App() {
                 path="/classes"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'secretary']}>
                       <Layout>
                         <Classes />
                       </Layout>
@@ -188,7 +188,7 @@ function App() {
                 path="/class-assignments"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'secretary']}>
                       <Layout>
                         <ClassAssignments />
                       </Layout>
@@ -200,7 +200,7 @@ function App() {
                 path="/fees"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'accountant', 'student', 'parent']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'accountant', 'student', 'parent', 'secretary']}>
                       <Layout>
                         <Fees />
                       </Layout>
@@ -212,7 +212,7 @@ function App() {
                 path="/exams"
                 element={
                   <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'student', 'parent']}>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'student', 'parent', 'secretary']}>
                       <Layout>
                         <Exams />
                       </Layout>
@@ -224,9 +224,11 @@ function App() {
                 path="/chat"
                 element={
                   <ProtectedRoute>
-                    <Layout>
-                      <Chat />
-                    </Layout>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'student', 'parent', 'accountant', 'librarian', 'nurse', 'security', 'secretary']}>
+                      <Layout>
+                        <Chat />
+                      </Layout>
+                    </RoleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -288,9 +290,11 @@ function App() {
                 path="/announcements"
                 element={
                   <ProtectedRoute>
-                    <Layout>
-                      <Announcements />
-                    </Layout>
+                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'teacher', 'student', 'parent', 'accountant', 'librarian', 'nurse', 'security', 'secretary']}>
+                      <Layout>
+                        <Announcements />
+                      </Layout>
+                    </RoleRoute>
                   </ProtectedRoute>
                 }
               />

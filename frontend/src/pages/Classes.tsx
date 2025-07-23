@@ -50,7 +50,7 @@ const initialForm = {
 
 const Classes: React.FC = () => {
   const { user } = useAuth();
-  const canManage = user?.role === 'school_admin' || user?.role === 'principal';
+  const canManage = user?.role === 'school_admin' || user?.role === 'principal' || user?.role === 'secretary';
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [academicYears, setAcademicYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('');
@@ -390,11 +390,11 @@ const Classes: React.FC = () => {
                                   <Edit />
                                 </IconButton>
                               </Tooltip>
-                              <Tooltip title="Delete">
-                                <IconButton onClick={() => handleDelete(cls.id)}>
-                                  <Delete />
-                                </IconButton>
-                              </Tooltip>
+                              {((user?.role === 'school_admin') || (user?.role === 'principal')) && (
+                                <Tooltip title="Delete">
+                                  <IconButton onClick={() => handleDelete(cls.id)}><Delete color="error" /></IconButton>
+                                </Tooltip>
+                              )}
                             </>
                           )}
                         </TableCell>
