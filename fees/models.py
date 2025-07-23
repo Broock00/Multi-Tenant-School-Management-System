@@ -37,11 +37,17 @@ class FeeStructure(models.Model):
 
 class StudentFee(models.Model):
     """Individual student fee records"""
+    STRUCTURE_CHOICES = [
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('yearly', 'Yearly'),
+        ('one_time', 'One Time'),
+    ]
     student = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='fees')
-    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.CASCADE)
+    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.CASCADE, null=True, blank=True)
+    structure = models.CharField(max_length=20, choices=STRUCTURE_CHOICES, default='monthly')
     due_date = models.DateField()
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     class Status(models.TextChoices):
         PENDING = 'pending', _('Pending')
@@ -50,13 +56,16 @@ class StudentFee(models.Model):
         OVERDUE = 'overdue', _('Overdue')
         WAIVED = 'waived', _('Waived')
     
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PAID)
     remarks = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    class Meta:
+        unique_together = ('student', 'structure', 'due_date')
+    
     def __str__(self):
-        return f"{self.student} - {self.fee_structure.category} - {self.due_date}"
+        return f"{self.student} - {self.structure} - {self.due_date}"
     
     @property
     def balance(self):
@@ -66,6 +75,19 @@ class StudentFee(models.Model):
     def is_overdue(self):
         from django.utils import timezone
         return self.due_date < timezone.now().date() and self.status != Status.PAID
+
+    @staticmethod
+    def get_or_create_for_current_month(student, structure, amount):
+        import datetime
+        today = datetime.date.today()
+        due_date = today.replace(day=1)
+        fee, created = StudentFee.objects.get_or_create(
+            student=student,
+            structure=structure,
+            due_date=due_date,
+            defaults={'amount': amount, 'status': StudentFee.Status.PAID}
+        )
+        return fee, created
 
 
 class Payment(models.Model):

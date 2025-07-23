@@ -30,6 +30,7 @@ import {
   Tabs,
   Tab,
   Divider,
+  Checkbox,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import {
@@ -48,6 +49,8 @@ import {
   Receipt,
 } from '@mui/icons-material';
 import { feesAPI } from '../services/api';
+import Autocomplete from '@mui/material/Autocomplete';
+import { studentsAPI } from '../services/api';
 
 interface FeeStructure {
   id: number;
@@ -172,28 +175,66 @@ const Fees: React.FC = () => {
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
+  // Defensive initialization (already present)
+  // const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
+  // const [studentFees, setStudentFees] = useState<StudentFee[]>([]);
+  // const [payments, setPayments] = useState<Payment[]>([]);
+  // const [categories, setCategories] = useState<FeeCategory[]>([]);
+
+  // Defensive setter for all fetches
+  const safeArray = (data: any) => Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+
+  // Payment Dialog State
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentOptions, setStudentOptions] = useState<any[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+  const [studentMonthFees, setStudentMonthFees] = useState<StudentFee[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]); // StudentFee IDs
+  const [monthPayments, setMonthPayments] = useState<{ [studentFeeId: number]: string }>({});
+  const [paymentDialogError, setPaymentDialogError] = useState('');
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Fetch students for autocomplete
+  useEffect(() => {
+    if (studentSearch.length < 2) return;
+    let active = true;
+    studentsAPI.searchStudents(studentSearch).then(res => {
+      if (active) setStudentOptions(res.data.results || res.data || []);
+    });
+    return () => { active = false; };
+  }, [studentSearch]);
+
+  // Fetch student fees when student is selected
+  useEffect(() => {
+    if (!selectedStudent) return;
+    feesAPI.getStudentFees({ student: selectedStudent.id }).then(res => {
+      setStudentMonthFees(res.data.results || res.data || []);
+    });
+    setSelectedMonths([]);
+    setMonthPayments({});
+  }, [selectedStudent]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       // Fetch fee structures
-      const structuresResponse = await feesAPI.getFees({ type: 'structures' });
-      setFeeStructures(structuresResponse.data.results || structuresResponse.data || []);
+      const structuresResponse = await feesAPI.getFeeStructures();
+      setFeeStructures(safeArray(structuresResponse.data));
 
       // Fetch student fees
-      const studentFeesResponse = await feesAPI.getFees({ type: 'student-fees' });
-      setStudentFees(studentFeesResponse.data.results || studentFeesResponse.data || []);
+      const studentFeesResponse = await feesAPI.getStudentFees();
+      setStudentFees(safeArray(studentFeesResponse.data));
 
       // Fetch payments
-      const paymentsResponse = await feesAPI.getFees({ type: 'payments' });
-      setPayments(paymentsResponse.data.results || paymentsResponse.data || []);
+      const paymentsResponse = await feesAPI.getPayments();
+      setPayments(safeArray(paymentsResponse.data));
 
       // Fetch categories
-      const categoriesResponse = await feesAPI.getFees({ type: 'categories' });
-      setCategories(categoriesResponse.data.results || categoriesResponse.data || []);
+      const categoriesResponse = await feesAPI.getCategories();
+      setCategories(safeArray(categoriesResponse.data));
 
     } catch (error) {
       console.error('Error fetching fees data:', error);
@@ -368,7 +409,7 @@ const Fees: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {feeStructures.map((structure) => (
+            {Array.isArray(feeStructures) && feeStructures.map((structure) => (
               <TableRow key={structure.id}>
                 <TableCell>{structure.name}</TableCell>
                 <TableCell>{structure.class_obj.name} {structure.class_obj.section}</TableCell>
@@ -429,7 +470,7 @@ const Fees: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {studentFees.map((fee) => (
+            {Array.isArray(studentFees) && studentFees.map((fee) => (
               <TableRow key={fee.id}>
                 <TableCell>
                   <Box>
@@ -497,7 +538,7 @@ const Fees: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {payments.map((payment) => (
+            {Array.isArray(payments) && payments.map((payment) => (
               <TableRow key={payment.id}>
                 <TableCell>
                   <Box>
@@ -551,7 +592,7 @@ const Fees: React.FC = () => {
       </Box>
 
       <Grid container sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 2 }}>
-        {categories.map((category) => (
+        {Array.isArray(categories) && categories.map((category) => (
           <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6', md: 'span 4' } }} key={category.id}>
             <Card>
               <CardContent>
@@ -596,8 +637,13 @@ const Fees: React.FC = () => {
     setOpenStructureDialog(true);
   };
 
-  const handleDeleteStructure = (id: number) => {
-    console.log('Delete structure:', id);
+  const handleDeleteStructure = async (id: number) => {
+    try {
+      await feesAPI.deleteFeeStructure(id);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to delete fee structure');
+    }
   };
 
   const handleEditStudentFee = (fee: StudentFee) => {
@@ -631,9 +677,220 @@ const Fees: React.FC = () => {
     setOpenCategoryDialog(true);
   };
 
-  const handleDeleteCategory = (id: number) => {
-    console.log('Delete category:', id);
+  const handleDeleteCategory = async (id: number) => {
+    try {
+      await feesAPI.deleteCategory(id);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to delete category');
+    }
   };
+
+  // --- Fee Structures CRUD ---
+  const handleSaveStructure = async () => {
+    try {
+      if (editingStructure) {
+        await feesAPI.updateFeeStructure(editingStructure.id, {
+          ...structureFormData,
+          class_obj: parseInt(structureFormData.class_obj),
+          category: parseInt(structureFormData.category),
+        });
+      } else {
+        await feesAPI.createFeeStructure({
+          ...structureFormData,
+          class_obj: parseInt(structureFormData.class_obj),
+          category: parseInt(structureFormData.category),
+        });
+      }
+      setOpenStructureDialog(false);
+      setEditingStructure(null);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to save fee structure');
+    }
+  };
+
+  // --- Student Fees CRUD ---
+  const handleSaveStudentFee = async () => {
+    try {
+      if (editingStudentFee) {
+        await feesAPI.updateStudentFee(editingStudentFee.id, {
+          ...studentFeeFormData,
+          student: parseInt(studentFeeFormData.student),
+          fee_structure: parseInt(studentFeeFormData.fee_structure),
+        });
+      } else {
+        await feesAPI.createStudentFee({
+          ...studentFeeFormData,
+          student: parseInt(studentFeeFormData.student),
+          fee_structure: parseInt(studentFeeFormData.fee_structure),
+        });
+      }
+      setOpenStudentFeeDialog(false);
+      setEditingStudentFee(null);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to save student fee');
+    }
+  };
+
+  const handleDeleteStudentFee = async (id: number) => {
+    try {
+      await feesAPI.deleteStudentFee(id);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to delete student fee');
+    }
+  };
+
+  // --- Payments CRUD ---
+  const handleSavePayment = async () => {
+    try {
+      await feesAPI.createPayment({
+        ...paymentFormData,
+        student_fee: parseInt(paymentFormData.student_fee),
+        amount: parseFloat(paymentFormData.amount),
+      });
+      setOpenPaymentDialog(false);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to record payment');
+    }
+  };
+
+  // --- Categories CRUD ---
+  const handleSaveCategory = async () => {
+    try {
+      if (editingCategory) {
+        await feesAPI.updateCategory(editingCategory.id, categoryFormData);
+      } else {
+        await feesAPI.createCategory(categoryFormData);
+      }
+      setOpenCategoryDialog(false);
+      setEditingCategory(null);
+      await fetchData();
+    } catch (err) {
+      setError('Failed to save category');
+    }
+  };
+
+  // Payment Dialog UI
+  const renderPaymentDialog = () => (
+    <Dialog open={openPaymentDialog} onClose={() => setOpenPaymentDialog(false)} maxWidth="md" fullWidth>
+      <DialogTitle>Record Payment</DialogTitle>
+      <DialogContent>
+        <Box mb={2}>
+          <Autocomplete
+            options={studentOptions}
+            getOptionLabel={option => option.full_name || option.name || option.username || ''}
+            onInputChange={(_, value) => setStudentSearch(value)}
+            onChange={(_, value) => setSelectedStudent(value)}
+            value={selectedStudent}
+            renderInput={params => <TextField {...params} label="Search Student" fullWidth />}
+          />
+        </Box>
+        {selectedStudent && (
+          <>
+            <Typography variant="subtitle1" gutterBottom>Select Month(s) to Pay:</Typography>
+            <TableContainer component={Paper}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Select</TableCell>
+                    <TableCell>Month</TableCell>
+                    <TableCell>Fee Type</TableCell>
+                    <TableCell>Due Date</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Remaining</TableCell>
+                    <TableCell>Amount to Pay</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {studentMonthFees.map(fee => (
+                    <TableRow key={fee.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedMonths.includes(fee.id)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedMonths([...selectedMonths, fee.id]);
+                              setMonthPayments({ ...monthPayments, [fee.id]: fee.remaining_amount.toString() });
+                            } else {
+                              setSelectedMonths(selectedMonths.filter(id => id !== fee.id));
+                              const mp = { ...monthPayments };
+                              delete mp[fee.id];
+                              setMonthPayments(mp);
+                            }
+                          }}
+                          disabled={fee.remaining_amount <= 0}
+                        />
+                      </TableCell>
+                      <TableCell>{new Date(fee.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</TableCell>
+                      <TableCell>{fee.fee_structure.category.name}</TableCell>
+                      <TableCell>{new Date(fee.due_date).toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <Chip label={fee.status} color={getStatusColor(fee.status) as any} size="small" />
+                      </TableCell>
+                      <TableCell>${fee.remaining_amount}</TableCell>
+                      <TableCell>
+                        <TextField
+                          type="number"
+                          size="small"
+                          value={monthPayments[fee.id] || ''}
+                          onChange={e => setMonthPayments({ ...monthPayments, [fee.id]: e.target.value })}
+                          disabled={!selectedMonths.includes(fee.id)}
+                          inputProps={{ min: 0, max: fee.remaining_amount }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        )}
+        {paymentDialogError && <Alert severity="error" sx={{ mt: 2 }}>{paymentDialogError}</Alert>}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setOpenPaymentDialog(false)}>Cancel</Button>
+        <Button
+          variant="contained"
+          onClick={async () => {
+            setPaymentDialogError('');
+            if (!selectedStudent || selectedMonths.length === 0) {
+              setPaymentDialogError('Please select a student and at least one month.');
+              return;
+            }
+            try {
+              await Promise.all(selectedMonths.map(feeId => {
+                const amount = parseFloat(monthPayments[feeId] || '0');
+                if (amount > 0) {
+                  return feesAPI.createPayment({
+                    student_fee: feeId,
+                    amount,
+                    payment_method: paymentFormData.payment_method,
+                    reference_number: paymentFormData.reference_number,
+                  });
+                }
+                return Promise.resolve();
+              }));
+              setOpenPaymentDialog(false);
+              setSelectedStudent(null);
+              setStudentMonthFees([]);
+              setSelectedMonths([]);
+              setMonthPayments({});
+              await fetchData();
+            } catch (err) {
+              setPaymentDialogError('Failed to record payment(s).');
+            }
+          }}
+          disabled={selectedMonths.length === 0 || selectedMonths.some(id => !monthPayments[id] || parseFloat(monthPayments[id]) <= 0)}
+        >
+          Record Payment
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
   if (loading) {
     return (
@@ -669,6 +926,7 @@ const Fees: React.FC = () => {
           {activeTab === 0 && renderFeeStructures()}
           {activeTab === 1 && renderStudentFees()}
           {activeTab === 2 && renderPayments()}
+          {renderPaymentDialog()}
           {activeTab === 3 && renderCategories()}
         </CardContent>
       </Card>
@@ -728,7 +986,7 @@ const Fees: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenStructureDialog(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setOpenStructureDialog(false)}>
+          <Button variant="contained" onClick={handleSaveStructure}>
             {editingStructure ? 'Update' : 'Create'}
           </Button>
         </DialogActions>
@@ -781,7 +1039,7 @@ const Fees: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenStudentFeeDialog(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setOpenStudentFeeDialog(false)}>
+          <Button variant="contained" onClick={handleSaveStudentFee}>
             {editingStudentFee ? 'Update' : 'Create'}
           </Button>
         </DialogActions>
@@ -831,7 +1089,7 @@ const Fees: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenPaymentDialog(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setOpenPaymentDialog(false)}>
+          <Button variant="contained" onClick={handleSavePayment}>
             Record Payment
           </Button>
         </DialogActions>
@@ -866,7 +1124,7 @@ const Fees: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenCategoryDialog(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setOpenCategoryDialog(false)}>
+          <Button variant="contained" onClick={handleSaveCategory}>
             {editingCategory ? 'Update' : 'Create'}
           </Button>
         </DialogActions>

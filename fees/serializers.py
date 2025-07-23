@@ -21,8 +21,8 @@ class FeeStructureSerializer(serializers.ModelSerializer):
     class Meta:
         model = FeeStructure
         fields = [
-            'id', 'name', 'class_obj', 'category', 'amount', 'frequency',
-            'due_date', 'is_active', 'created_at', 'updated_at'
+            'id', 'class_obj', 'category', 'amount', 'frequency',
+            'academic_year', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     
@@ -39,15 +39,12 @@ class StudentFeeSerializer(serializers.ModelSerializer):
     student_info = serializers.SerializerMethodField()
     fee_structure = FeeStructureSerializer(read_only=True)
     payments = serializers.SerializerMethodField()
-    paid_amount = serializers.SerializerMethodField()
-    remaining_amount = serializers.SerializerMethodField()
     
     class Meta:
         model = StudentFee
         fields = [
-            'id', 'student', 'student_info', 'fee_structure', 'amount',
-            'due_date', 'status', 'paid_amount', 'remaining_amount',
-            'payments', 'created_at', 'updated_at'
+            'id', 'student', 'student_info', 'structure', 'fee_structure', 'amount',
+            'due_date', 'status', 'payments', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     

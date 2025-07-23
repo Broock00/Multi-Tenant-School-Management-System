@@ -36,12 +36,14 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons-material';
-import { studentsAPI, classesAPI } from '../services/api';
+import { studentsAPI, classesAPI, feesAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import dayjs from 'dayjs';
 import Avatar from '@mui/material/Avatar';
 import { deepPurple, deepOrange, blue, green, pink, teal } from '@mui/material/colors';
 import { PieChart } from '@mui/x-charts/PieChart';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 interface Student {
   id: number;
@@ -198,6 +200,35 @@ const Students: React.FC = () => {
     { month: 'May 2024', status: 'Pending', amount: 100 },
   ];
 
+  // Add state for student fees in the details dialog
+  const [studentFees, setStudentFees] = useState<any[]>([]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentStudentFee, setPaymentStudentFee] = useState<any | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+
+  // Add state for new fee dialog
+  const [newFeeDialogOpen, setNewFeeDialogOpen] = useState(false);
+  const [newFeeMonths, setNewFeeMonths] = useState<string[]>([]);
+  const [newFeeAmount, setNewFeeAmount] = useState('');
+  const [newFeeError, setNewFeeError] = useState('');
+  const [feeStructures, setFeeStructures] = useState<any[]>([]);
+
+  // Add state for structure selection
+  const [newFeeStructureType, setNewFeeStructureType] = useState<'monthly' | 'yearly' | 'quarterly' | 'one_time'>('monthly');
+  const [newFeePeriods, setNewFeePeriods] = useState<string[]>([]);
+
+  // Add state for report dialog and filters
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportClasses, setReportClasses] = useState<number[]>([]);
+  const [reportYear, setReportYear] = useState('');
+  const [reportStatus, setReportStatus] = useState<'all' | 'paid' | 'pending'>('all');
+  const [reportStudent, setReportStudent] = useState<number | null>(null);
+  const [reportPreview, setReportPreview] = useState<any[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [studentOptions, setStudentOptions] = useState<any[]>([]);
+  const [reportMonth, setReportMonth] = useState<string>('');
+
   const canManage = user?.role === 'school_admin' || user?.role === 'secretary';
 
   const fetchStudents = async (pageNum: number = 1, query: string = '') => {
@@ -282,6 +313,66 @@ const Students: React.FC = () => {
     }
     // eslint-disable-next-line
   }, [formAcademicYear]);
+
+  // In the Payments tab, always fetch fees for the selected student:
+  useEffect(() => {
+    if (selectedViewStudent && viewDialogOpen) {
+      feesAPI.getStudentFees({ student: selectedViewStudent.id }).then(res => {
+        setStudentFees(res.data.results || res.data || []);
+      });
+    }
+  }, [selectedViewStudent, viewDialogOpen]);
+
+  // Fetch categories and structures for the dialog
+  useEffect(() => {
+    if (newFeeDialogOpen && selectedViewStudent) {
+      feesAPI.getFeeStructures({ class_obj: selectedViewStudent.current_class?.id }).then(res => setFeeStructures(res.data.results || res.data || []));
+    }
+  }, [newFeeDialogOpen, selectedViewStudent]);
+
+  // Fetch students for autocomplete
+  const fetchStudentOptions = async (query: string) => {
+    const res = await studentsAPI.getStudents({ search: query });
+    setStudentOptions(res.data.results || res.data || []);
+  };
+
+  // Fetch preview data
+  const fetchReportPreview = async () => {
+    setReportLoading(true);
+    try {
+      const params: any = {};
+      if (reportClasses.length) params.class_id = reportClasses;
+      if (reportYear) params.academic_year = reportYear;
+      if (reportStatus !== 'all') params.status = reportStatus;
+      if (reportStudent) params.student = reportStudent;
+      if (reportMonth) params.month = reportMonth;
+      const res = await feesAPI.getStudentFees(params);
+      setReportPreview(res.data.results || res.data || []);
+    } catch {
+      setReportPreview([]);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // Generate PDF
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Student Payment Report', 14, 16);
+    const tableData = reportPreview.map((fee: any) => [
+      fee.student_info?.name || '',
+      fee.student_info?.class || '',
+      new Date(fee.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      fee.status === 'paid' ? 'Paid' : 'Pending',
+      fee.amount,
+    ]);
+    (doc as any).autoTable({
+      head: [['Student', 'Class', 'Month', 'Status', 'Amount']],
+      body: tableData,
+      startY: 22,
+    });
+    doc.save('student_payment_report.pdf');
+  };
 
   const handleSearch = () => {
     setPage(1);
@@ -581,17 +672,113 @@ const Students: React.FC = () => {
     </FormControl>
   );
 
+  // Helper to get latest payment status
+  const getLatestPaymentStatus = (fees: any[]) => {
+    if (!fees.length) return 'Pending';
+    const latest = fees.reduce((a, b) => new Date(a.due_date) > new Date(b.due_date) ? a : b);
+    return latest.status === 'paid' ? 'Paid' : 'Pending';
+  };
+
+  // Add a helper to generate months for the academic year
+  function getAcademicYearMonths(academicYear: string) {
+    // Assume academicYear is like '2023-2024' or '2024'
+    const months: { value: string; label: string }[] = [];
+    let startYear = parseInt(academicYear.split('-')[0]);
+    let endYear = academicYear.includes('-') ? parseInt(academicYear.split('-')[1]) : startYear;
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    for (let y = startYear; y <= endYear; y++) {
+      for (let m = 1; m <= 12; m++) {
+        const value = `${y}-${m.toString().padStart(2, '0')}`;
+        const label = `${monthNames[m - 1]} ${y}`;
+        months.push({ value, label });
+      }
+    }
+    return months;
+  }
+
+  // Helper to get periods based on structure
+  function getPeriods(structure: string, academicYear: string) {
+    const periods: { value: string; label: string }[] = [];
+    let startYear = parseInt(academicYear.split('-')[0]);
+    let endYear = academicYear.includes('-') ? parseInt(academicYear.split('-')[1]) : startYear;
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    if (structure === 'monthly') {
+      for (let y = startYear; y <= endYear; y++) {
+        for (let m = 1; m <= 12; m++) {
+          const value = `${y}-${m.toString().padStart(2, '0')}`;
+          const label = `${monthNames[m - 1]} ${y}`;
+          periods.push({ value, label });
+        }
+      }
+    } else if (structure === 'yearly') {
+      for (let y = startYear; y <= endYear; y++) {
+        periods.push({ value: `${y}`, label: `${y}` });
+      }
+    } else if (structure === 'quarterly') {
+      for (let y = startYear; y <= endYear; y++) {
+        for (let q = 1; q <= 4; q++) {
+          const value = `${y}-Q${q}`;
+          const label = `Q${q} ${y}`;
+          periods.push({ value, label });
+        }
+      }
+    } else if (structure === 'one_time') {
+      for (let y = startYear; y <= endYear; y++) {
+        periods.push({ value: `${y}-one`, label: `One Time (${y})` });
+      }
+    }
+    return periods;
+  }
+
+  // Main Students table: fetch and display payment status for the current month for each student
+  const [studentPaymentStatus, setStudentPaymentStatus] = useState<{ [studentId: number]: string }>({});
+
+  useEffect(() => {
+    if (students.length > 0) {
+      const fetchStatuses = async () => {
+        const statusMap: { [studentId: number]: string } = {};
+        await Promise.all(students.map(async (student) => {
+          const res = await feesAPI.getStudentFees({ student: student.id });
+          const fees = res.data.results || res.data || [];
+          // Find the fee for the current month
+          const today = new Date();
+          const currentMonth = today.getMonth();
+          const currentYear = today.getFullYear();
+          const currentMonthFee = fees.find((fee: any) => {
+            const feeDate = new Date(fee.due_date);
+            // Only match the month, not the year
+            return feeDate.getMonth() === currentMonth;
+          });
+          statusMap[student.id] = currentMonthFee && currentMonthFee.status === 'paid' ? 'Paid' : 'Pending';
+        }));
+        setStudentPaymentStatus(statusMap);
+      };
+      fetchStatuses();
+    }
+  }, [students]);
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" gutterBottom>
           Students Management
         </Typography>
-        {canManage && (
-          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-            Add Student
+        <Box>
+          {canManage && (
+            <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()} sx={{ mr: 2 }}>
+              Add Student
+            </Button>
+          )}
+          <Button variant="outlined" onClick={() => setReportDialogOpen(true)}>
+            Generate Payment Report
           </Button>
-        )}
+        </Box>
       </Box>
 
       {/* Academic Year Filter */}
@@ -688,8 +875,8 @@ const Students: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <Chip
-                            label={student.payment_status === 'paid' ? 'Paid' : 'Pending'}
-                            color={student.payment_status === 'paid' ? 'success' : 'warning'}
+                            label={studentPaymentStatus[student.id] === 'Paid' ? 'Paid' : 'Pending'}
+                            color={studentPaymentStatus[student.id] === 'Paid' ? 'success' : 'warning'}
                             size="small"
                           />
                         </TableCell>
@@ -1122,7 +1309,7 @@ const Students: React.FC = () => {
                       <Grid sx={{ gridColumn: { xs: 'span 12', sm: 'span 6' }, display: 'flex', flexDirection: 'column', gap: 1 }}>
                         <Typography><b>Class:</b> {selectedViewStudent.current_class ? `${selectedViewStudent.current_class.name}${selectedViewStudent.current_class.section ? ' - ' + selectedViewStudent.current_class.section : ''} (${selectedViewStudent.current_class.academic_year})` : '-'}</Typography>
                         <Typography><b>Academic Status:</b> {selectedViewStudent.academic_status}</Typography>
-                        <Typography><b>Payment Status:</b> {selectedViewStudent.payment_status === 'paid' ? 'Paid' : 'Pending'}</Typography>
+                        <Typography><b>Payment Status:</b> {getLatestPaymentStatus(studentFees)}</Typography>
                         <Typography><b>Phone Number:</b> {selectedViewStudent.phone_number || '-'}</Typography>
                         <Typography><b>Address:</b> {selectedViewStudent.address || '-'}</Typography>
                         <Typography><b>Emergency Contact:</b> {selectedViewStudent.emergency_contact || '-'}</Typography>
@@ -1221,24 +1408,109 @@ const Students: React.FC = () => {
               {detailsTab === 3 && (
                 <Box>
                   <Typography variant="h6" gutterBottom>Payment Information</Typography>
+                  {(() => {
+                    const allPeriods = selectedViewStudent && selectedViewStudent.current_class
+                      ? getPeriods(newFeeStructureType, selectedViewStudent.current_class.academic_year)
+                      : [];
+                    const existingPeriods = studentFees.map(fee => {
+                      if (newFeeStructureType === 'monthly') return fee.due_date.slice(0, 7);
+                      if (newFeeStructureType === 'yearly') return fee.due_date.slice(0, 4);
+                      if (newFeeStructureType === 'quarterly') {
+                        const month = parseInt(fee.due_date.slice(5, 7));
+                        const quarter = Math.floor((month - 1) / 3) + 1;
+                        return `${fee.due_date.slice(0, 4)}-Q${quarter}`;
+                      }
+                      if (newFeeStructureType === 'one_time') return fee.due_date.slice(0, 4) + '-one';
+                      return '';
+                    });
+                    const availablePeriods = allPeriods.filter(periodObj => !existingPeriods.includes(periodObj.value));
+                    return availablePeriods.length > 0 ? (
+                      <Button variant="contained" color="primary" onClick={() => setNewFeeDialogOpen(true)} sx={{ mb: 2 }}>
+                        Add Payment Record
+                      </Button>
+                    ) : null;
+                  })()}
                   <Table size="small">
                     <TableHead>
                       <TableRow>
                         <TableCell>Month</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell>Amount</TableCell>
+                        <TableCell>Actions</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {mockPayments.map((p, i) => (
-                        <TableRow key={i}>
-                          <TableCell>{p.month}</TableCell>
-                          <TableCell>{p.status}</TableCell>
-                          <TableCell>{p.amount}</TableCell>
-                        </TableRow>
-                      ))}
+                      {studentFees.map((fee: any, i: number) => {
+                        // Determine status: 'Paid' if fee.status === 'paid', otherwise 'Pending' for current month
+                        const today = new Date();
+                        const feeMonth = new Date(fee.due_date);
+                        const isCurrentMonth = today.getFullYear() === feeMonth.getFullYear() && today.getMonth() === feeMonth.getMonth();
+                        let status = fee.status;
+                        if (isCurrentMonth && status !== 'paid') status = 'pending';
+                        return (
+                          <TableRow key={fee.id}>
+                            <TableCell>{feeMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</TableCell>
+                            <TableCell>{status === 'paid' ? 'Paid' : 'Pending'}</TableCell>
+                            <TableCell>{fee.amount}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => {
+                                  setPaymentStudentFee(fee);
+                                  setPaymentDialogOpen(true);
+                                  setPaymentAmount(fee.amount.toString());
+                                }}
+                              >
+                                Update
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
+                  {/* Payment dialog for a single month */}
+                  <Dialog open={paymentDialogOpen} onClose={() => setPaymentDialogOpen(false)}>
+                    <DialogTitle>Record Payment</DialogTitle>
+                    <DialogContent>
+                      <TextField
+                        label="Amount"
+                        type="number"
+                        value={paymentAmount}
+                        onChange={e => setPaymentAmount(e.target.value)}
+                        fullWidth
+                        margin="normal"
+                      />
+                      {paymentError && <Alert severity="error">{paymentError}</Alert>}
+                    </DialogContent>
+                    <DialogActions>
+                      <Button onClick={() => setPaymentDialogOpen(false)}>Cancel</Button>
+                      <Button
+                        variant="contained"
+                        onClick={async () => {
+                          setPaymentError('');
+                          try {
+                            await feesAPI.updateStudentFee(paymentStudentFee.id, {
+                              amount: parseFloat(paymentAmount),
+                              status: 'paid',
+                            });
+                            setPaymentDialogOpen(false);
+                            setPaymentStudentFee(null);
+                            setPaymentAmount('');
+                            // Refresh student fees
+                            const res = await feesAPI.getStudentFees({ student: selectedViewStudent.id });
+                            setStudentFees(res.data.results || res.data || []);
+                          } catch (err) {
+                            setPaymentError('Failed to update payment.');
+                          }
+                        }}
+                        disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}
+                      >
+                        Update
+                      </Button>
+                    </DialogActions>
+                  </Dialog>
                 </Box>
               )}
             </Box>
@@ -1246,6 +1518,231 @@ const Students: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewDialogOpen(false)} variant="contained">Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* New StudentFee dialog */}
+      <Dialog open={newFeeDialogOpen} onClose={() => setNewFeeDialogOpen(false)}>
+        <DialogTitle>Add Payment Record(s)</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Structure</InputLabel>
+            <Select
+              value={newFeeStructureType}
+              label="Structure"
+              onChange={e => {
+                setNewFeeStructureType(e.target.value as any);
+                setNewFeePeriods([]);
+              }}
+            >
+              <MenuItem value="monthly">Monthly</MenuItem>
+              <MenuItem value="quarterly">Quarterly</MenuItem>
+              <MenuItem value="yearly">Yearly</MenuItem>
+              <MenuItem value="one_time">One Time</MenuItem>
+            </Select>
+          </FormControl>
+          <Typography>Select {newFeeStructureType === 'monthly' ? 'Months' : newFeeStructureType === 'quarterly' ? 'Quarters' : newFeeStructureType === 'yearly' ? 'Years' : 'Year'}:</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', mb: 2 }}>
+            {selectedViewStudent && selectedViewStudent.current_class && selectedViewStudent.current_class.academic_year && (() => {
+              const allPeriods = getPeriods(newFeeStructureType, selectedViewStudent.current_class.academic_year);
+              // Exclude periods that already have a StudentFee
+              const existingPeriods = studentFees.map(fee => {
+                if (newFeeStructureType === 'monthly') return fee.due_date.slice(0, 7);
+                if (newFeeStructureType === 'yearly') return fee.due_date.slice(0, 4);
+                if (newFeeStructureType === 'quarterly') {
+                  const month = parseInt(fee.due_date.slice(5, 7));
+                  const quarter = Math.floor((month - 1) / 3) + 1;
+                  return `${fee.due_date.slice(0, 4)}-Q${quarter}`;
+                }
+                if (newFeeStructureType === 'one_time') return fee.due_date.slice(0, 4) + '-one';
+                return '';
+              });
+              return allPeriods.filter(periodObj => !existingPeriods.includes(periodObj.value)).map(periodObj => (
+                <FormControlLabel
+                  key={periodObj.value}
+                  control={
+                    <Checkbox
+                      checked={newFeePeriods.includes(periodObj.value)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setNewFeePeriods([...newFeePeriods, periodObj.value]);
+                        } else {
+                          setNewFeePeriods(newFeePeriods.filter(m => m !== periodObj.value));
+                        }
+                      }}
+                    />
+                  }
+                  label={periodObj.label}
+                  sx={{ minWidth: 140 }}
+                />
+              ));
+            })()}
+          </Box>
+          <TextField
+            label="Amount"
+            type="number"
+            value={newFeeAmount}
+            onChange={e => setNewFeeAmount(e.target.value)}
+            fullWidth
+            margin="normal"
+          />
+          {newFeeError && <Alert severity="error">{newFeeError}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNewFeeDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              setNewFeeError('');
+              if (!newFeePeriods.length || !newFeeAmount || !selectedViewStudent) {
+                setNewFeeError('All fields are required.');
+                return;
+              }
+              try {
+                const perPeriodAmount = parseFloat(newFeeAmount) / newFeePeriods.length;
+                await Promise.all(newFeePeriods.map(period => {
+                  let due_date = '';
+                  if (newFeeStructureType === 'monthly') due_date = period + '-01';
+                  else if (newFeeStructureType === 'yearly') due_date = period + '-01-01';
+                  else if (newFeeStructureType === 'quarterly') {
+                    const [year, q] = period.split('-Q');
+                    const month = (parseInt(q) - 1) * 3 + 1;
+                    due_date = `${year}-${month.toString().padStart(2, '0')}-01`;
+                  } else if (newFeeStructureType === 'one_time') due_date = period.replace('-one', '') + '-01-01';
+                  return feesAPI.createStudentFee({
+                    student: selectedViewStudent.id,
+                    structure: newFeeStructureType,
+                    due_date,
+                    amount: perPeriodAmount,
+                  });
+                }));
+                setNewFeeDialogOpen(false);
+                setNewFeePeriods([]);
+                setNewFeeAmount('');
+                // Refresh student fees
+                const res = await feesAPI.getStudentFees({ student: selectedViewStudent.id });
+                setStudentFees(res.data.results || res.data || []);
+              } catch (err) {
+                setNewFeeError('Failed to create payment records.');
+              }
+            }}
+            disabled={!newFeePeriods.length || !newFeeAmount || !selectedViewStudent}
+          >
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Report Dialog */}
+      <Dialog open={reportDialogOpen} onClose={() => setReportDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Generate Payment Report</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel>Class</InputLabel>
+              <Select
+                multiple
+                value={reportClasses}
+                onChange={e => setReportClasses(e.target.value as number[])}
+                label="Class"
+              >
+                {classes.map(cls => (
+                  <MenuItem key={cls.id} value={cls.id}>{cls.name} {cls.section} ({cls.academic_year})</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl sx={{ minWidth: 120 }}>
+              <InputLabel>Year</InputLabel>
+              <Select
+                value={reportYear}
+                onChange={e => setReportYear(e.target.value)}
+                label="Year"
+              >
+                <MenuItem value="">All</MenuItem>
+                {academicYears.map(year => (
+                  <MenuItem key={year} value={year}>{year}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl sx={{ minWidth: 120 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={reportStatus}
+                onChange={e => setReportStatus(e.target.value as any)}
+                label="Status"
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="paid">Paid</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl sx={{ minWidth: 120 }}>
+              <InputLabel>Month</InputLabel>
+              <Select
+                value={reportMonth}
+                onChange={e => setReportMonth(e.target.value)}
+                label="Month"
+              >
+                <MenuItem value="">All</MenuItem>
+                {[
+                  'January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'
+                ].map((month, idx) => (
+                  <MenuItem key={month} value={String(idx + 1).padStart(2, '0')}>{month}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label="Student (optional)"
+              value={reportStudent || ''}
+              onChange={e => {
+                const val = e.target.value;
+                setReportStudent(val ? Number(val) : null);
+                if (val) fetchStudentOptions(val);
+              }}
+              select
+              sx={{ minWidth: 200 }}
+            >
+              <MenuItem value="">All</MenuItem>
+              {studentOptions.map(opt => (
+                <MenuItem key={opt.id} value={opt.id}>{opt.user.first_name} {opt.user.last_name}</MenuItem>
+              ))}
+            </TextField>
+            <Button variant="contained" onClick={fetchReportPreview} disabled={reportLoading}>
+              Preview
+            </Button>
+          </Box>
+          {/* Preview Table */}
+          <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Student</TableCell>
+                  <TableCell>Class</TableCell>
+                  <TableCell>Month</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Amount</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {reportPreview.map((fee, i) => (
+                  <TableRow key={fee.id || i}>
+                    <TableCell>{fee.student_info?.name || ''}</TableCell>
+                    <TableCell>{fee.student_info?.class || ''}</TableCell>
+                    <TableCell>{new Date(fee.due_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</TableCell>
+                    <TableCell>{fee.status === 'paid' ? 'Paid' : 'Pending'}</TableCell>
+                    <TableCell>{fee.amount}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReportDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleDownloadPDF} disabled={!reportPreview.length}>
+            Download PDF
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

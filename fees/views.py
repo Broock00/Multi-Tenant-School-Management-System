@@ -43,18 +43,32 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filter student fees based on user role"""
+        queryset = super().get_queryset()
+        student_id = self.request.query_params.get('student')
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
+        class_ids = self.request.query_params.getlist('class_id')
+        if class_ids:
+            queryset = queryset.filter(student__current_class__id__in=class_ids)
+        academic_year = self.request.query_params.get('academic_year')
+        if academic_year:
+            queryset = queryset.filter(student__current_class__academic_year=academic_year)
+        status = self.request.query_params.get('status')
+        if status and status != 'all':
+            queryset = queryset.filter(status=status)
+        month = self.request.query_params.get('month')
+        if month:
+            queryset = queryset.filter(due_date__month=month)
         user = self.request.user
-        
         if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.ACCOUNTANT]:
-            return StudentFee.objects.all()
+            return queryset
         elif user.role == user.UserRole.STUDENT:
             try:
                 student = user.student_profile
-                return StudentFee.objects.filter(student=student)
+                return queryset.filter(student=student)
             except:
-                return StudentFee.objects.none()
-        return StudentFee.objects.none()
+                return queryset.none()
+        return queryset.none()
     
     @action(detail=False, methods=['get'])
     def pending(self, request):

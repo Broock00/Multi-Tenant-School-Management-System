@@ -197,18 +197,6 @@ function App() {
                 }
               />
               <Route
-                path="/fees"
-                element={
-                  <ProtectedRoute>
-                    <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal', 'accountant', 'student', 'parent', 'secretary']}>
-                      <Layout>
-                        <Fees />
-                      </Layout>
-                    </RoleRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
                 path="/exams"
                 element={
                   <ProtectedRoute>

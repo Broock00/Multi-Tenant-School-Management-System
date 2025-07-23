@@ -155,11 +155,33 @@ export const classSubjectsAPI = {
 
 // Fees API
 export const feesAPI = {
-  getFees: (params?: any) => api.get('/fees/', { params }),
-  getFee: (id: number) => api.get(`/fees/${id}/`),
-  createFee: (data: any) => api.post('/fees/', data),
-  updateFee: (id: number, data: any) => api.put(`/fees/${id}/`, data),
-  deleteFee: (id: number) => api.delete(`/fees/${id}/`),
+  // Fee Structures
+  getFeeStructures: (params?: any) => api.get('/fees/structures/', { params }),
+  getFeeStructure: (id: number) => api.get(`/fees/structures/${id}/`),
+  createFeeStructure: (data: any) => api.post('/fees/structures/', data),
+  updateFeeStructure: (id: number, data: any) => api.put(`/fees/structures/${id}/`, data),
+  deleteFeeStructure: (id: number) => api.delete(`/fees/structures/${id}/`),
+
+  // Student Fees
+  getStudentFees: (params?: any) => api.get('/fees/student-fees/', { params }),
+  getStudentFee: (id: number) => api.get(`/fees/student-fees/${id}/`),
+  createStudentFee: (data: any) => api.post('/fees/student-fees/', data),
+  updateStudentFee: (id: number, data: any) => api.patch(`/fees/student-fees/${id}/`, data),
+  deleteStudentFee: (id: number) => api.delete(`/fees/student-fees/${id}/`),
+
+  // Payments
+  getPayments: (params?: any) => api.get('/fees/payments/', { params }),
+  getPayment: (id: number) => api.get(`/fees/payments/${id}/`),
+  createPayment: (data: any) => api.post('/fees/payments/', data),
+  updatePayment: (id: number, data: any) => api.put(`/fees/payments/${id}/`, data),
+  deletePayment: (id: number) => api.delete(`/fees/payments/${id}/`),
+
+  // Categories
+  getCategories: (params?: any) => api.get('/fees/categories/', { params }),
+  getCategory: (id: number) => api.get(`/fees/categories/${id}/`),
+  createCategory: (data: any) => api.post('/fees/categories/', data),
+  updateCategory: (id: number, data: any) => api.put(`/fees/categories/${id}/`, data),
+  deleteCategory: (id: number) => api.delete(`/fees/categories/${id}/`),
 };
 
 // Exams API
