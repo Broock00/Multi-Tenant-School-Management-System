@@ -36,14 +36,14 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Search, Visibility, VisibilityOff } from '@mui/icons-material';
-import { studentsAPI, classesAPI, feesAPI } from '../services/api';
+import { studentsAPI, classesAPI, feesAPI, schoolsAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import dayjs from 'dayjs';
 import Avatar from '@mui/material/Avatar';
 import { deepPurple, deepOrange, blue, green, pink, teal } from '@mui/material/colors';
 import { PieChart } from '@mui/x-charts/PieChart';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 interface Student {
   id: number;
@@ -180,6 +180,8 @@ const Students: React.FC = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState(0);
   const [activityStatusFilter, setActivityStatusFilter] = useState<'All' | 'Present' | 'Absent'>('All');
+  const [schoolInfo, setSchoolInfo] = useState<any>(null);
+  const [schoolInfoError, setSchoolInfoError] = useState<string | null>(null);
 
   // Mock data for activities, assessments, and payments
   const mockActivities = [
@@ -357,8 +359,22 @@ const Students: React.FC = () => {
 
   // Generate PDF
   const handleDownloadPDF = () => {
+    if (!schoolInfo) {
+      alert('School information is not loaded yet. Please try again in a moment.');
+      return;
+    }
     const doc = new jsPDF();
-    doc.text('Student Payment Report', 14, 16);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const now = dayjs().format('MMMM D, YYYY');
+    const schoolName = schoolInfo?.name || 'School Name';
+    const schoolAddress = schoolInfo?.address || '';
+    const schoolPhone = schoolInfo?.phone || '';
+    const schoolEmail = schoolInfo?.email || '';
+    const schoolContact = [schoolPhone, schoolEmail].filter(Boolean).join(' | ');
+    // Combine address, contact, and date into one row
+    const infoRow = [schoolAddress, schoolContact, `Date: ${now}`].filter(Boolean).join('   |   ');
+    const headerHeight = 26; // Increased header height for clarity
     const tableData = reportPreview.map((fee: any) => [
       fee.student_info?.name || '',
       fee.student_info?.class || '',
@@ -366,10 +382,24 @@ const Students: React.FC = () => {
       fee.status === 'paid' ? 'Paid' : 'Pending',
       fee.amount,
     ]);
-    (doc as any).autoTable({
+    autoTable(doc, {
       head: [['Student', 'Class', 'Month', 'Status', 'Amount']],
       body: tableData,
-      startY: 22,
+      startY: margin + headerHeight,
+      didDrawPage: (data) => {
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(schoolName, pageWidth / 2, margin, { align: 'center' });
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(infoRow, pageWidth / 2, margin + 8, { align: 'center' });
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Student Payment Report', pageWidth / 2, margin + 18, { align: 'center' });
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+      },
+      margin: { top: margin + headerHeight },
     });
     doc.save('student_payment_report.pdf');
   };
@@ -762,6 +792,30 @@ const Students: React.FC = () => {
       fetchStatuses();
     }
   }, [students]);
+
+  useEffect(() => {
+    console.log('Current user:', user);
+    const schoolId =
+      user && user.school && typeof user.school === 'object' && 'id' in user.school
+        ? (user.school as { id: number }).id
+        : user?.school;
+    if (schoolId) {
+      schoolsAPI.getSchool(schoolId)
+        .then(res => {
+          console.log('Fetched school info:', res.data);
+          setSchoolInfo(res.data);
+          setSchoolInfoError(null);
+        })
+        .catch((err) => {
+          setSchoolInfo(null);
+          setSchoolInfoError('Failed to fetch school information.');
+          console.error('Failed to fetch school info:', err);
+        });
+    } else {
+      setSchoolInfo(null);
+      setSchoolInfoError('No school ID found for current user.');
+    }
+  }, [user]);
 
   return (
     <Box>
@@ -1740,7 +1794,7 @@ const Students: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setReportDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleDownloadPDF} disabled={!reportPreview.length}>
+          <Button variant="contained" onClick={handleDownloadPDF} disabled={!reportPreview.length || !schoolInfo}>
             Download PDF
           </Button>
         </DialogActions>

@@ -47,9 +47,14 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         student_id = self.request.query_params.get('student')
         if student_id:
             queryset = queryset.filter(student_id=student_id)
-        class_ids = self.request.query_params.getlist('class_id')
-        if class_ids:
-            queryset = queryset.filter(student__current_class__id__in=class_ids)
+        # Robust class filter: handle array, comma-separated, or both, and support both 'class_id' and 'class_id[]' params
+        class_ids = self.request.query_params.getlist('class_id') + self.request.query_params.getlist('class_id[]')
+        final_class_ids = []
+        for val in class_ids:
+            final_class_ids.extend(str(val).split(','))
+        final_class_ids = [cid for cid in final_class_ids if cid]
+        if final_class_ids:
+            queryset = queryset.filter(student__current_class__id__in=final_class_ids)
         academic_year = self.request.query_params.get('academic_year')
         if academic_year:
             queryset = queryset.filter(student__current_class__academic_year=academic_year)
