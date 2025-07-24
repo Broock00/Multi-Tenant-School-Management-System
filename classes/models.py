@@ -82,6 +82,8 @@ class ClassSchedule(models.Model):
     end_time = models.TimeField()
     room = models.CharField(max_length=50, blank=True)
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         unique_together = ['class_obj', 'day', 'start_time']

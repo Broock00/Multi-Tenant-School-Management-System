@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CardContent, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Checkbox, FormControlLabel,
-  CircularProgress, Tooltip, Chip, Alert, MenuItem, FormControl, InputLabel, Select, Accordion, AccordionSummary, AccordionDetails
+  CircularProgress, Tooltip, Chip, Alert, MenuItem, FormControl, InputLabel, Select, Accordion, AccordionSummary, AccordionDetails, Snackbar
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Add, Edit, Delete, Group, Schedule, ExpandMore, AutoAwesome } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { classesAPI } from '../services/api';
 import Pagination from '@mui/material/Pagination';
+import api from '../services/api'; // Added for schedule CRUD
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ClassItem {
   id: number;
@@ -48,6 +51,24 @@ const initialForm = {
   is_active: true,
 };
 
+const DAYS = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
+  { value: 'sunday', label: 'Sunday' },
+];
+const emptyScheduleForm = {
+  day: 'monday',
+  start_time: '',
+  end_time: '',
+  subject: '',
+  teacher: '',
+  room: '',
+};
+
 const Classes: React.FC = () => {
   const { user } = useAuth();
   const canManage = user?.role === 'school_admin' || user?.role === 'principal' || user?.role === 'secretary';
@@ -75,6 +96,15 @@ const Classes: React.FC = () => {
   const [scheduleModal, setScheduleModal] = useState<{ open: boolean; classId: number | null; schedule: ScheduleItem[] }>({ open: false, classId: null, schedule: [] });
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState('');
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
+  const [scheduleForm, setScheduleForm] = useState({ ...emptyScheduleForm });
+  const [scheduleActionLoading, setScheduleActionLoading] = useState(false);
+  const [scheduleSnackbar, setScheduleSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [includeTeacher, setIncludeTeacher] = useState(true);
+  const [includeRoom, setIncludeRoom] = useState(true);
   
   const fetchClasses = async (year?: string, pageNum: number = 1) => {
     setLoading(true);
@@ -278,13 +308,182 @@ const Classes: React.FC = () => {
     setModalLoading(true);
     setModalError('');
     try {
-      const res = await classesAPI.getClassSchedule(classId);
-      setScheduleModal({ open: true, classId, schedule: Array.isArray(res.data) ? res.data : [] });
+      const [scheduleRes, subjectsRes, teachersRes] = await Promise.all([
+        classesAPI.getClassSchedule(classId),
+        // Use the correct endpoints for class subjects and teachers
+        // (Assume classSubjectsAPI and teachersAPI are imported)
+        // If not, use api.get('/classes/class-subjects/', ...) and api.get('/auth/teachers/', ...)
+        api.get('/classes/class-subjects/', { params: { class_id: classId } }),
+        api.get('/auth/teachers/'),
+      ]);
+      setScheduleModal({ open: true, classId, schedule: Array.isArray(scheduleRes.data) ? scheduleRes.data : [] });
+      setSubjects(subjectsRes.data.results || subjectsRes.data || []);
+      setTeachers(teachersRes.data.results || teachersRes.data || []);
     } catch (err) {
       setModalError('Failed to load schedule.');
     } finally {
       setModalLoading(false);
     }
+  };
+
+  const handleOpenScheduleDialog = (entry?: any) => {
+    if (entry && entry.id) {
+      setEditingSchedule(entry);
+      setScheduleForm({
+        day: entry.day,
+        start_time: entry.start_time,
+        end_time: entry.end_time,
+        subject: entry.subject?.id || entry.subject || '',
+        teacher: entry.teacher?.id || entry.teacher || '',
+        room: entry.room || '',
+      });
+    } else {
+      setEditingSchedule(null);
+      setScheduleForm({ ...emptyScheduleForm, ...(entry || {}) });
+    }
+    setScheduleDialogOpen(true);
+  };
+  const handleCloseScheduleDialog = () => {
+    setScheduleDialogOpen(false);
+    setEditingSchedule(null);
+    setScheduleForm({ ...emptyScheduleForm });
+  };
+  const handleScheduleFormChange = (field: string, value: any) => {
+    setScheduleForm(prev => ({ ...prev, [field]: value }));
+  };
+  const handleScheduleSubmit = async () => {
+    setScheduleActionLoading(true);
+    try {
+      const data = {
+        class_obj_id: scheduleModal.classId,
+        subject_id: scheduleForm.subject,
+        teacher_id: scheduleForm.teacher ? Number(scheduleForm.teacher) : null,
+        day: scheduleForm.day,
+        start_time: scheduleForm.start_time,
+        end_time: scheduleForm.end_time,
+        room: scheduleForm.room,
+      };
+      if (editingSchedule) {
+        await api.put(`/classes/schedules/${editingSchedule.id}/`, data);
+        setScheduleSnackbar({ open: true, message: 'Schedule updated', severity: 'success' });
+      } else {
+        await api.post('/classes/schedules/', data);
+        setScheduleSnackbar({ open: true, message: 'Schedule added', severity: 'success' });
+      }
+      // Refresh schedule
+      const res = await classesAPI.getClassSchedule(scheduleModal.classId!);
+      setScheduleModal(modal => ({ ...modal, schedule: Array.isArray(res.data) ? res.data : [] }));
+      handleCloseScheduleDialog();
+    } catch (err: any) {
+      let message = err.response?.data?.detail || 'Failed to save schedule';
+      if (
+        (err.response?.data && typeof err.response.data === 'string' && err.response.data.includes('UNIQUE constraint failed')) ||
+        (err.response?.data?.detail && typeof err.response.data.detail === 'string' && err.response.data.detail.includes('UNIQUE constraint failed'))
+      ) {
+        message = 'A schedule already exists for this class, day, and period.';
+      }
+      setScheduleSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setScheduleActionLoading(false);
+    }
+  };
+  const handleScheduleDelete = async (id: number) => {
+    setScheduleActionLoading(true);
+    try {
+      await api.delete(`/classes/schedules/${id}/`);
+      setScheduleSnackbar({ open: true, message: 'Schedule deleted', severity: 'success' });
+      // Refresh schedule
+      const res = await classesAPI.getClassSchedule(scheduleModal.classId!);
+      setScheduleModal(modal => ({ ...modal, schedule: Array.isArray(res.data) ? res.data : [] }));
+    } catch (err: any) {
+      setScheduleSnackbar({ open: true, message: err.response?.data?.detail || 'Failed to delete schedule', severity: 'error' });
+    } finally {
+      setScheduleActionLoading(false);
+    }
+  };
+
+  // PDF download handler for class schedule
+  const handleDownloadSchedulePDF = () => {
+    if (!scheduleModal.classId || !scheduleModal.schedule.length) return;
+    const classObj = classes.find(c => c.id === scheduleModal.classId);
+    const className = classObj ? `${classObj.name}${classObj.section ? ' - ' + classObj.section : ''}` : 'Class';
+    const academicYear = classObj?.academic_year || '';
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    // Header
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Class Schedule: ${className}`, pageWidth / 2, margin, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Academic Year: ${academicYear}`, pageWidth / 2, margin + 8, { align: 'center' });
+    // Build table data
+    const schedule = scheduleModal.schedule;
+    const periods = Array.from(new Set(schedule.map(s => `${s.start_time}-${s.end_time}`))).sort();
+    const grid = {} as { [period: string]: { [day: string]: any } };
+    periods.forEach(period => {
+      grid[period] = {};
+      DAYS.forEach(day => {
+        grid[period][day.value] = schedule.find(s => `${s.start_time}-${s.end_time}` === period && s.day === day.value);
+      });
+    });
+    const head = [['Period', ...DAYS.map(day => day.label)]];
+    const body = periods.map(period => {
+      const [start, end] = period.split('-');
+      const periodLabel = `${start.slice(0,5)} - ${end.slice(0,5)}`;
+      return [
+        periodLabel,
+        ...DAYS.map(day => {
+          const entry = grid[period][day.value];
+          if (!entry) return '';
+          let text = entry.subject?.name || '';
+          if (includeTeacher && entry.teacher_info?.name) text += `\n${entry.teacher_info.name}`;
+          if (includeRoom && entry.room) text += `\nRoom: ${entry.room}`;
+          return text;
+        })
+      ];
+    });
+    autoTable(doc, {
+      head,
+      body,
+      startY: margin + 18,
+      styles: { fontSize: 10, cellPadding: 2 },
+      headStyles: { fillColor: [22, 160, 133] },
+      theme: 'grid',
+      willDrawCell: function (data) {
+        if (data.section === 'body' && data.cell.raw) {
+          const lines = String(data.cell.raw).split('\n');
+          if (lines.length > 1) {
+            data.cell.text = [];
+          }
+        }
+      },
+      didDrawCell: function (data) {
+        if (data.section === 'body' && data.cell.raw) {
+          const lines = String(data.cell.raw).split('\n');
+          const doc = data.doc;
+          const textPos = typeof (data as any).cell.getTextPos === 'function'
+            ? (data as any).cell.getTextPos()
+            : (data as any).cell.textPos;
+          if (!textPos) return;
+          if (lines.length > 1) {
+            // Draw subject (main) line bold
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text(lines[0], textPos.x, textPos.y, { baseline: 'top' });
+            // Draw teacher/room lines smaller, italic, not bold
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(9);
+            const lineHeight = 5.5;
+            for (let i = 1; i < lines.length; i++) {
+              doc.text(lines[i], textPos.x, textPos.y + i * lineHeight, { baseline: 'top' });
+            }
+          }
+        }
+      },
+    });
+    doc.save(`class_schedule_${className.replace(/\s+/g, '_')}_${academicYear}.pdf`);
   };
 
   return (
@@ -557,7 +756,7 @@ const Classes: React.FC = () => {
         </DialogActions>
       </Dialog>
       {/* Schedule Modal */}
-      <Dialog open={scheduleModal.open} onClose={() => setScheduleModal({ open: false, classId: null, schedule: [] })} maxWidth="md" fullWidth>
+      <Dialog open={scheduleModal.open} onClose={() => setScheduleModal({ open: false, classId: null, schedule: [] })} maxWidth="xl" fullWidth>
         <DialogTitle>Class Schedule</DialogTitle>
         <DialogContent>
           {modalLoading ? (
@@ -567,38 +766,176 @@ const Classes: React.FC = () => {
           ) : modalError ? (
             <Alert severity="error">{modalError}</Alert>
           ) : (
-            <TableContainer component={Paper}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Subject</TableCell>
-                    <TableCell>Teacher</TableCell>
-                    <TableCell>Day</TableCell>
-                    <TableCell>Start Time</TableCell>
-                    <TableCell>End Time</TableCell>
-                    <TableCell>Room</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {scheduleModal.schedule.map(sch => (
-                    <TableRow key={sch.id}>
-                      <TableCell>{sch.subject?.name}</TableCell>
-                      <TableCell>{sch.teacher_info?.name || '-'}</TableCell>
-                      <TableCell>{sch.day}</TableCell>
-                      <TableCell>{sch.start_time}</TableCell>
-                      <TableCell>{sch.end_time}</TableCell>
-                      <TableCell>{sch.room}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <FormControlLabel
+                  control={<Checkbox checked={includeTeacher} onChange={e => setIncludeTeacher(e.target.checked)} />}
+                  label="Include Teacher Names"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={includeRoom} onChange={e => setIncludeRoom(e.target.checked)} />}
+                  label="Include Room Numbers"
+                />
+              </Box>
+              {canManage && (
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => handleOpenScheduleDialog()}
+                  >
+                    Add Schedule Entry
+                  </Button>
+                </Box>
+              )}
+              <Box sx={{ overflowX: 'auto' }}>
+                {/* Timetable grid */}
+                {(() => {
+                  const schedule = scheduleModal.schedule;
+                  const periods = Array.from(new Set(schedule.map(s => `${s.start_time}-${s.end_time}`))).sort();
+                  const grid: { [period: string]: { [day: string]: any } } = {};
+                  periods.forEach(period => {
+                    grid[period] = {};
+                    DAYS.forEach(day => {
+                      grid[period][day.value] = schedule.find(s => `${s.start_time}-${s.end_time}` === period && s.day === day.value);
+                    });
+                  });
+                  return (
+                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ border: '1px solid #ccc', padding: 8, minWidth: 120 }}>Period</th>
+                          {DAYS.map(day => (
+                            <th key={day.value} style={{ border: '1px solid #ccc', padding: 8 }}>{day.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {periods.map(period => (
+                          <tr key={period}>
+                            <td style={{ border: '1px solid #ccc', padding: 8 }}>{(() => { const [start, end] = period.split('-'); return `${start.slice(0,5)} - ${end.slice(0,5)}`; })()}</td>
+                            {DAYS.map(day => {
+                              const entry = grid[period][day.value];
+                              return (
+                                <td key={day.value} style={{ border: '1px solid #ccc', padding: 4, minWidth: 120, minHeight: 40, verticalAlign: 'top' }}>
+                                  {entry ? (
+                                    <>
+                                      <Typography variant="subtitle2">{entry.subject?.name}</Typography>
+                                      <Typography variant="body2" color="text.secondary">{entry.teacher_info?.name || '-'}</Typography>
+                                      <Typography variant="caption" color="text.secondary">{entry.room}</Typography>
+                                      {canManage && (
+                                        <Box sx={{ mt: 1 }}>
+                                          <IconButton size="small" onClick={() => handleOpenScheduleDialog(entry)}><Edit fontSize="small" /></IconButton>
+                                          <IconButton size="small" onClick={() => handleScheduleDelete(entry.id)}><Delete fontSize="small" color="error" /></IconButton>
+                                        </Box>
+                                      )}
+                                    </>
+                                  ) : (
+                                    canManage && (
+                                      <IconButton size="small" onClick={() => handleOpenScheduleDialog({ day: day.value, start_time: period.split('-')[0], end_time: period.split('-')[1], subject: '', teacher: '', room: '' })}>
+                                        <Add fontSize="small" />
+                                      </IconButton>
+                                    )
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </Box>
+            </>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setScheduleModal({ open: false, classId: null, schedule: [] })}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={handleDownloadSchedulePDF}
+            disabled={!scheduleModal.schedule.length}
+          >
+            Download PDF
+          </Button>
         </DialogActions>
       </Dialog>
+      {/* Add/Edit Schedule Dialog */}
+      <Dialog open={scheduleDialogOpen} onClose={handleCloseScheduleDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>{editingSchedule ? 'Edit Schedule' : 'Add Schedule'}</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Day</InputLabel>
+            <Select value={scheduleForm.day} label="Day" onChange={e => handleScheduleFormChange('day', e.target.value)}>
+              {DAYS.map(day => (
+                <MenuItem key={day.value} value={day.value}>{day.label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Start Time"
+            type="time"
+            value={scheduleForm.start_time}
+            onChange={e => handleScheduleFormChange('start_time', e.target.value)}
+            fullWidth
+            margin="normal"
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="End Time"
+            type="time"
+            value={scheduleForm.end_time}
+            onChange={e => handleScheduleFormChange('end_time', e.target.value)}
+            fullWidth
+            margin="normal"
+            InputLabelProps={{ shrink: true }}
+          />
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Subject</InputLabel>
+            <Select value={scheduleForm.subject} label="Subject" onChange={e => handleScheduleFormChange('subject', e.target.value)}>
+              {subjects.map(subj => (
+                <MenuItem key={subj.subject?.id || subj.subject} value={subj.subject?.id || subj.subject}>{subj.subject_name || subj.subject?.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Teacher</InputLabel>
+            <Select value={scheduleForm.teacher} label="Teacher" onChange={e => handleScheduleFormChange('teacher', e.target.value)}>
+              {teachers
+                .filter(teacher => {
+                  // Only show teachers assigned to the selected subject for this class
+                  if (!scheduleForm.subject) return true;
+                  return subjects.some(subj => (subj.subject?.id || subj.subject) === scheduleForm.subject && subj.teacher === teacher.id);
+                })
+                .map(teacher => (
+                  <MenuItem key={teacher.id} value={teacher.id}>{teacher.user?.full_name || teacher.user?.username}</MenuItem>
+                ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Room"
+            value={scheduleForm.room}
+            onChange={e => handleScheduleFormChange('room', e.target.value)}
+            fullWidth
+            margin="normal"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseScheduleDialog}>Cancel</Button>
+          <Button variant="contained" onClick={handleScheduleSubmit} disabled={scheduleActionLoading}>{editingSchedule ? 'Update' : 'Add'}</Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={scheduleSnackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setScheduleSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={scheduleSnackbar.severity} onClose={() => setScheduleSnackbar(prev => ({ ...prev, open: false }))}>
+          {scheduleSnackbar.message}
+        </Alert>
+      </Snackbar>
 
       {/* Auto Generate Classes Dialog */}
       <Dialog open={autoGenerateDialog} onClose={() => setAutoGenerateDialog(false)} maxWidth="sm" fullWidth>

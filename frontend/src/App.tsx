@@ -22,6 +22,7 @@ import Subscriptions from './pages/Subscriptions';
 import Announcements from './pages/Announcements';
 import SystemChat from './pages/SystemChat';
 import Secretaries from './pages/Secretaries';
+import ClassSchedule from './pages/ClassSchedule';
 
 // Create theme
 const theme = createTheme({
@@ -303,6 +304,18 @@ function App() {
                     <RoleRoute allowedRoles={['super_admin', 'school_admin', 'principal']}>
                       <Layout>
                         <Secretaries />
+                      </Layout>
+                    </RoleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/class-schedule"
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute allowedRoles={['school_admin', 'principal', 'secretary']}>
+                      <Layout>
+                        <ClassSchedule />
                       </Layout>
                     </RoleRoute>
                   </ProtectedRoute>

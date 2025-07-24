@@ -65,7 +65,7 @@ class StudentFeeViewSet(viewsets.ModelViewSet):
         if month:
             queryset = queryset.filter(due_date__month=month)
         user = self.request.user
-        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.ACCOUNTANT]:
+        if user.role in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN, user.UserRole.PRINCIPAL, user.UserRole.ACCOUNTANT, user.UserRole.SECRETARY]:
             return queryset
         elif user.role == user.UserRole.STUDENT:
             try:

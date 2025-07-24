@@ -97,15 +97,18 @@ class ClassScheduleSerializer(serializers.ModelSerializer):
     class_obj = ClassSerializer(read_only=True)
     subject = SubjectSerializer(read_only=True)
     teacher_info = serializers.SerializerMethodField()
+    class_obj_id = serializers.IntegerField(write_only=True)
+    subject_id = serializers.IntegerField(write_only=True)
+    teacher_id = serializers.IntegerField(write_only=True)
     
     class Meta:
         model = ClassSchedule
         fields = [
-            'id', 'class_obj', 'subject', 'teacher', 'teacher_info',
+            'id', 'class_obj', 'class_obj_id', 'subject', 'subject_id', 'teacher', 'teacher_id', 'teacher_info',
             'day', 'start_time', 'end_time', 'room', 'is_active',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'teacher', 'created_at', 'updated_at']
     
     def get_teacher_info(self, obj):
         if obj.teacher:
@@ -115,6 +118,22 @@ class ClassScheduleSerializer(serializers.ModelSerializer):
                 'employee_id': obj.teacher.employee_id
             }
         return None
+
+    def create(self, validated_data):
+        class_obj_id = validated_data.pop('class_obj_id')
+        subject_id = validated_data.pop('subject_id')
+        teacher_id = validated_data.pop('teacher_id')
+        from .models import Class, Subject
+        from users.models import Teacher
+        class_obj = Class.objects.get(id=class_obj_id)
+        subject = Subject.objects.get(id=subject_id)
+        teacher = Teacher.objects.get(id=teacher_id)
+        return ClassSchedule.objects.create(
+            class_obj=class_obj,
+            subject=subject,
+            teacher=teacher,
+            **validated_data
+        )
 
 
 class AttendanceSerializer(serializers.ModelSerializer):

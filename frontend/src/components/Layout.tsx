@@ -87,6 +87,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { text: 'Teachers', icon: <PeopleIcon />, path: '/teachers' },
           { text: 'Classes', icon: <ClassIcon />, path: '/classes' },
           { text: 'Class Assignments', icon: <AssignmentIcon />, path: '/class-assignments' },
+          { text: 'Class Schedule', icon: <ClassIcon />, path: '/class-schedule' },
           { text: 'Announcements', icon: <NotificationsIcon />, path: '/announcements' },
           { text: 'Secretaries', icon: <PeopleIcon />, path: '/secretaries' },
           { text: 'Chat', icon: <ChatIcon />, path: '/chat' },
@@ -106,8 +107,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { text: 'Teachers', icon: <PeopleIcon />, path: '/teachers' },
           { text: 'Classes', icon: <ClassIcon />, path: '/classes' },
           { text: 'Class Assignments', icon: <AssignmentIcon />, path: '/class-assignments' },
+          { text: 'Class Schedule', icon: <ClassIcon />, path: '/class-schedule' },
           { text: 'Announcements', icon: <NotificationsIcon />, path: '/announcements' },
-          { text: 'Fees', icon: <PaymentIcon />, path: '/fees' },
           { text: 'Chat', icon: <ChatIcon />, path: '/chat' },
         ];
       default:

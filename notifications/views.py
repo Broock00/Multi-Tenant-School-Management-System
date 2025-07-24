@@ -110,3 +110,49 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"Error creating notifications: {e}")
             # Don't fail the announcement creation if notification creation fails 
+
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        instance = self.get_object()
+        # Super admins can update all, school admins can update all in their school, secretaries only their own
+        if user.role == 'super_admin':
+            pass
+        elif user.role == 'school_admin':
+            if instance.school != user.school:
+                return Response({'detail': 'You can only update announcements in your school.'}, status=status.HTTP_403_FORBIDDEN)
+        elif user.role == 'secretary':
+            if instance.author != user:
+                return Response({'detail': 'You can only update your own announcements.'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        user = request.user
+        instance = self.get_object()
+        if user.role == 'super_admin':
+            pass
+        elif user.role == 'school_admin':
+            if instance.school != user.school:
+                return Response({'detail': 'You can only update announcements in your school.'}, status=status.HTTP_403_FORBIDDEN)
+        elif user.role == 'secretary':
+            if instance.author != user:
+                return Response({'detail': 'You can only update your own announcements.'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        user = request.user
+        instance = self.get_object()
+        if user.role == 'super_admin':
+            pass
+        elif user.role == 'school_admin':
+            if instance.school != user.school:
+                return Response({'detail': 'You can only delete announcements in your school.'}, status=status.HTTP_403_FORBIDDEN)
+        elif user.role == 'secretary':
+            if instance.author != user:
+                return Response({'detail': 'You can only delete your own announcements.'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs) 

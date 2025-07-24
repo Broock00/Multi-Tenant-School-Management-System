@@ -434,7 +434,11 @@ const Announcements: React.FC = () => {
                         </Box>
                       }
                     />
-                    {(user?.role === 'super_admin' || user?.role === 'school_admin') && (
+                    {(
+                      user?.role === 'super_admin' ||
+                      user?.role === 'school_admin' ||
+                      (user?.role === 'secretary' && announcement.author_info?.id === user.id)
+                    ) && (
                       <Box>
                         <IconButton
                           size="small"

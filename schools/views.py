@@ -24,7 +24,7 @@ class SchoolViewSet(viewsets.ModelViewSet):
         
         if user.role == 'super_admin':
             return School.objects.all()
-        elif user.role in ['school_admin', 'principal']:
+        elif user.role in ['school_admin', 'principal', 'secretary']:
             return School.objects.filter(id=user.school.id) if user.school else School.objects.none()
         else:
             return School.objects.none()
