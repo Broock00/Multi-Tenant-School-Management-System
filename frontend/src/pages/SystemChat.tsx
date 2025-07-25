@@ -59,6 +59,7 @@ const SystemChat: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user: currentUser } = useAuth();
@@ -121,6 +122,55 @@ const SystemChat: React.FC = () => {
     fetchMessages();
   }, [selectedChat]);
 
+  // WebSocket connection management
+  useEffect(() => {
+    if (!selectedChat) {
+      if (ws) {
+        ws.close();
+        setWs(null);
+      }
+      return;
+    }
+    // Close previous connection
+    if (ws) {
+      ws.close();
+      setWs(null);
+    }
+    // Build websocket URL
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.host;
+    const token = localStorage.getItem('access_token');
+    const url = `${protocol}://${host}/ws/chat/${selectedChat.id}/?token=${token}`;
+    const socket = new WebSocket(url);
+    setWs(socket);
+    // Message receive handler
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: data.message_id || Date.now(),
+            sender: data.sender || '',
+            senderRole: '',
+            content: data.message,
+            timestamp: data.timestamp || new Date().toISOString(),
+            isRead: true,
+          },
+        ]);
+      } catch (e) {}
+    };
+    // Error/close handlers
+    socket.onerror = () => { setError('WebSocket error'); };
+    socket.onclose = () => {};
+    // Cleanup on unmount/room change
+    return () => {
+      socket.close();
+      setWs(null);
+    };
+    // eslint-disable-next-line
+  }, [selectedChat]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -131,33 +181,29 @@ const SystemChat: React.FC = () => {
 
   const handleSendMessage = async () => {
     if (message.trim() && selectedChat) {
-      try {
-        console.log('Sending message:', { room: selectedChat.id, content: message.trim() });
-        const res = await chatAPI.sendMessage({ room: selectedChat.id, content: message.trim() });
-        console.log('Message API response:', res.data);
-        const msg = res.data;
-        setMessages(prev => [
-          ...prev,
-          {
-            id: msg.id,
-            sender: msg.sender_info?.name || '',
-            senderRole: msg.sender_info?.role || '',
-            content: msg.content,
-            timestamp: msg.created_at,
-            isRead: msg.is_read,
-          },
-        ]);
-      setMessage('');
-        // Optionally update chat list last message
-      setChats(prev =>
-        prev.map(chat =>
-          chat.id === selectedChat.id
-              ? { ...chat, lastMessage: msg.content, lastMessageTime: msg.created_at }
-            : chat
-        )
-      );
-      } catch (err) {
-        setError('Failed to send message');
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ message: message.trim() }));
+        setMessage('');
+      } else {
+        // fallback to REST if websocket not ready
+        try {
+          const res = await chatAPI.sendMessage({ room: selectedChat.id, content: message.trim() });
+          const msg = res.data;
+          setMessages(prev => [
+            ...prev,
+            {
+              id: msg.id,
+              sender: msg.sender_info?.name || '',
+              senderRole: msg.sender_info?.role || '',
+              content: msg.content,
+              timestamp: msg.created_at,
+              isRead: msg.is_read,
+            },
+          ]);
+          setMessage('');
+        } catch (err) {
+          setError('Failed to send message');
+        }
       }
     }
   };
