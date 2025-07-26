@@ -1,0 +1,17 @@
+name: Auto-Close PRs from Forks
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  close-pr:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.fork == true
+    steps:
+      - name: Close PR from fork
+        uses: peter-evans/close-pull-request@v3
+        with:
+          comment: |
+            🚫 Thank you for your contribution. However, this repository does not accept public pull requests.
+            If you have suggestions, please open an issue instead.
