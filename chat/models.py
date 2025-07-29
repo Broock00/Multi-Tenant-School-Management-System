@@ -18,6 +18,7 @@ class ChatRoom(models.Model):
     class_obj = models.ForeignKey('classes.Class', on_delete=models.CASCADE, null=True, blank=True, related_name='chat_rooms')
     is_active = models.BooleanField(default=True)
     is_private = models.BooleanField(default=False)
+    is_global_admin_room = models.BooleanField(default=False, help_text="Single shared room for all System Admins and School Admins")
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     

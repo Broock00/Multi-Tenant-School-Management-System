@@ -18,7 +18,7 @@ class ChatRoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatRoom
         fields = [
-            'id', 'name', 'room_type', 'class_obj',
+            'id', 'name', 'room_type', 'class_obj', 'is_global_admin_room',
             'participants', 'participants_info', 'last_message', 'unread_count',
             'is_active', 'created_at'
         ]
@@ -55,25 +55,15 @@ class ChatRoomSerializer(serializers.ModelSerializer):
         if not request or not request.user.is_authenticated:
             return 0
         user = request.user
-        messages = obj.messages.exclude(sender=user)
-        if user.role == 'super_admin':
-            # Only count messages from school admins that no super admin has read
-            super_admin_ids = [u.id for u in obj.participants.all() if getattr(u, 'role', '').lower() == 'super_admin']
-            unread = 0
-            for msg in messages.filter(sender__role='school_admin'):
-                if not msg.read_by.filter(user_id__in=super_admin_ids).exists():
-                    unread += 1
-            return unread
-        elif user.role == 'school_admin':
-            # Only count messages from super admins that no school admin has read
-            school_admin_ids = [u.id for u in obj.participants.all() if getattr(u, 'role', '').lower() == 'school_admin']
-            unread = 0
-            for msg in messages.filter(sender__role='super_admin'):
-                if not msg.read_by.filter(user_id__in=school_admin_ids).exists():
-                    unread += 1
-            return unread
-        # Default: count only for this user
-        return messages.exclude(read_by__user=user).count()
+        
+        # Count messages in this room that haven't been read by the current user
+        unread_count = obj.messages.exclude(
+            sender=user
+        ).exclude(
+            read_by__user=user
+        ).count()
+        
+        return unread_count
 
 
 class MessageSerializer(serializers.ModelSerializer):

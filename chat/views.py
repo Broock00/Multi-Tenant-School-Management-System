@@ -3,7 +3,7 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import ChatRoom, Message, Notification
+from .models import ChatRoom, Message, Notification, MessageRead
 from .serializers import (
     ChatRoomSerializer, MessageSerializer, NotificationSerializer, AnnouncementSerializer
 )
@@ -114,8 +114,18 @@ class MessageViewSet(viewsets.ModelViewSet):
             return queryset.filter(room_id__in=room_ids)
     
     def perform_create(self, serializer):
-        """Set the sender when creating a message"""
-        serializer.save(sender=self.request.user)
+        """Set the sender when creating a message and mark as unread for all recipients except sender"""
+        message = serializer.save(sender=self.request.user)
+        
+        # Mark message as unread for all room participants except the sender
+        room_participants = message.room.participants.all()
+        for participant in room_participants:
+            if participant.user != self.request.user:
+                MessageRead.objects.get_or_create(
+                    message=message,
+                    user=participant.user,
+                    defaults={'read_at': None}
+                )
     
     @action(detail=False, methods=['get'])
     def unread_count(self, request):
@@ -123,11 +133,14 @@ class MessageViewSet(viewsets.ModelViewSet):
         user = request.user
         room_ids = user.chat_rooms.values_list('id', flat=True)
         
+        # Count messages that haven't been read by this user
         unread_count = Message.objects.filter(
-            room_id__in=room_ids,
-            sender__id__in=user.chat_rooms.values_list('participants', flat=True),
-            is_read=False
-        ).exclude(sender=user).count()
+            room_id__in=room_ids
+        ).exclude(
+            sender=user
+        ).exclude(
+            read_by__user=user
+        ).count()
         
         return Response({'unread_count': unread_count})
     
@@ -138,10 +151,42 @@ class MessageViewSet(viewsets.ModelViewSet):
         user = request.user
         
         if user in message.room.participants.all():
-            message.is_read = True
-            message.save()
+            # Create or update MessageRead record
+            MessageRead.objects.get_or_create(
+                message=message,
+                user=user,
+                defaults={'read_at': timezone.now()}
+            )
             return Response({'message': 'Message marked as read'})
         return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+    
+    @action(detail=False, methods=['post'])
+    def mark_room_read(self, request):
+        """Mark all messages in a room as read for the current user"""
+        user = request.user
+        room_id = request.data.get('room_id')
+        
+        if not room_id:
+            return Response({'error': 'room_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get all unread messages in the room for this user
+        unread_messages = Message.objects.filter(
+            room_id=room_id
+        ).exclude(
+            sender=user
+        ).exclude(
+            read_by__user=user
+        )
+        
+        # Mark all as read
+        for message in unread_messages:
+            MessageRead.objects.get_or_create(
+                message=message,
+                user=user,
+                defaults={'read_at': timezone.now()}
+            )
+        
+        return Response({'message': f'Marked {unread_messages.count()} messages as read'})
 
 
 class NotificationViewSet(viewsets.ModelViewSet):

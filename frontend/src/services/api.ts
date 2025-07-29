@@ -212,6 +212,31 @@ export const chatAPI = {
   sendMessage: (data: any) => api.post('/chat/messages/', data),
   getChatRooms: () => api.get('/chat/rooms/'),
   createChatRoom: (data: any) => api.post('/chat/rooms/', data),
+  markRoomAsRead: (roomId: number) => api.post(`/chat/rooms/${roomId}/mark_as_read/`),
+  deleteMessage: (messageId: number, deleteForEveryone: boolean = false) => 
+    api.delete(`/chat/messages/${messageId}/`, { params: { delete_for_everyone: deleteForEveryone } }),
+  deleteSelectedMessages: (messageIds: number[], deleteForEveryone: boolean = false) => 
+    api.post('/chat/messages/delete_selected/', { message_ids: messageIds, delete_for_everyone: deleteForEveryone }),
+  deleteAllMessages: (roomId: number) => api.delete(`/chat/rooms/${roomId}/messages/`),
+  
+  // Reply and Forward
+  replyToMessage: (data: any) => api.post('/chat/messages/reply/', data),
+  forwardMessage: (data: any) => api.post('/chat/messages/forward/', data),
+  
+  // File sharing
+  uploadFile: (file: File, roomId: number) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('room_id', roomId.toString());
+    return api.post('/chat/files/upload/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  downloadFile: (fileId: number) => api.get(`/chat/files/${fileId}/download/`, { responseType: 'blob' }),
+  getFileInfo: (fileId: number) => api.get(`/chat/files/${fileId}/`),
+  deleteFile: (fileId: number) => api.delete(`/chat/files/${fileId}/`),
 };
 
 // System Settings API
