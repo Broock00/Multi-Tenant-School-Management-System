@@ -234,9 +234,9 @@ export const chatAPI = {
       },
     });
   },
-  downloadFile: (fileId: number) => api.get(`/chat/files/${fileId}/download/`, { responseType: 'blob' }),
-  getFileInfo: (fileId: number) => api.get(`/chat/files/${fileId}/`),
-  deleteFile: (fileId: number) => api.delete(`/chat/files/${fileId}/`),
+  downloadFile: (messageId: number) => api.get(`/chat/messages/${messageId}/download_file/`, { responseType: 'blob' }),
+  getFileInfo: (messageId: number) => api.get(`/chat/messages/${messageId}/get_file_info/`),
+  deleteFile: (messageId: number) => api.delete(`/chat/messages/${messageId}/delete_file/`),
 };
 
 // System Settings API

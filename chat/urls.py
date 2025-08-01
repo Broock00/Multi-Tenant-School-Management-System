@@ -12,4 +12,6 @@ router.register(r'bulk', BulkMessageViewSet, basename='bulkmessage')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # File upload endpoint
+    path('files/upload/', MessageViewSet.as_view({'post': 'upload_file'}), name='chat-file-upload'),
 ] 

@@ -25,6 +25,7 @@ import {
   DialogActions,
   Checkbox,
   FormControlLabel,
+  Tooltip,
 } from '@mui/material';
 import {
   Send,
@@ -502,18 +503,31 @@ const SystemChat: React.FC = () => {
   }, [messageToDelete, deleteForEveryone, deleteMessage]);
 
   // File download function
-  const downloadFile = useCallback(async (fileId: number, fileName: string) => {
+  const downloadFile = useCallback(async (messageId: number, fileName: string) => {
     try {
-      const response = await chatAPI.downloadFile(fileId);
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const response = await chatAPI.downloadFile(messageId);
+      
+      // Create blob from response data
+      const blob = new Blob([response.data], { 
+        type: response.headers['content-type'] || 'application/octet-stream' 
+      });
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', fileName);
+      link.style.display = 'none';
+      
+      // Trigger download
       document.body.appendChild(link);
       link.click();
-      link.remove();
+      
+      // Cleanup
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
+      console.error('Download error:', err);
       setError(err.response?.data?.message || 'Failed to download file');
     }
   }, []);
@@ -578,38 +592,29 @@ const SystemChat: React.FC = () => {
     
     setUploadingFile(true);
     try {
-      // Upload the file first
+      // Upload the file - this already creates a message
       const uploadResponse = await chatAPI.uploadFile(selectedFile, selectedRoom.id);
       console.log('🔍 SystemChat - File upload response:', uploadResponse);
       
-      // Send the file as a message
-      const messageData: any = {
-        room: selectedRoom.id,
-        content: `📎 ${selectedFile.name}`,
-        file_id: uploadResponse.data.id // Include the uploaded file ID
-      };
-      
-      // Add reply data if replying to a message
-      if (replyToMessage) {
-        messageData.reply_to_id = replyToMessage.id;
-      }
-      
-      const messageResponse = await chatAPI.sendMessage(messageData);
-      console.log('🔍 SystemChat - File message response:', messageResponse);
-      
-      // Add new message to the room messages state
+      // The backend already creates the message, so we just need to add it to our state
       const newMessage = {
-        id: messageResponse.data.id,
-        content: messageResponse.data.content,
-        sender: messageResponse.data.sender_info?.name || 
-                (messageResponse.data.sender_info?.first_name && messageResponse.data.sender_info?.last_name ? 
-                 `${messageResponse.data.sender_info.first_name} ${messageResponse.data.sender_info.last_name}` : 
-                 messageResponse.data.sender_info?.username || 
-                 (messageResponse.data.sender && !isNaN(messageResponse.data.sender) ? `User ${messageResponse.data.sender}` : messageResponse.data.sender) || 
+        id: uploadResponse.data.id,
+        content: uploadResponse.data.content,
+        sender: uploadResponse.data.sender_info?.name || 
+                (uploadResponse.data.sender_info?.first_name && uploadResponse.data.sender_info?.last_name ? 
+                 `${uploadResponse.data.sender_info.first_name} ${uploadResponse.data.sender_info.last_name}` : 
+                 uploadResponse.data.sender_info?.username || 
+                 (uploadResponse.data.sender && !isNaN(uploadResponse.data.sender) ? `User ${uploadResponse.data.sender}` : uploadResponse.data.sender) || 
                  'Unknown'),
-        timestamp: messageResponse.data.created_at,
-        sender_info: messageResponse.data.sender_info,
-        file: uploadResponse.data // Include file information
+        timestamp: uploadResponse.data.created_at,
+        sender_info: uploadResponse.data.sender_info,
+        file: {
+          id: uploadResponse.data.id,
+          name: selectedFile.name,
+          size: selectedFile.size,
+          type: selectedFile.type,
+          url: uploadResponse.data.attachment || ''
+        }
       };
       
       console.log('🔍 SystemChat - New file message object:', newMessage);
@@ -720,6 +725,7 @@ const SystemChat: React.FC = () => {
 
   // Detect and format links in text
   const formatMessageContent = useCallback((content: string) => {
+    if (!content) return '';
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = content.split(urlRegex);
     
@@ -750,7 +756,7 @@ const SystemChat: React.FC = () => {
 
   // Format file size
   const formatFileSize = useCallback((bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -758,7 +764,8 @@ const SystemChat: React.FC = () => {
   }, []);
 
   // Get file icon based on type
-  const getFileIcon = useCallback((fileType: string) => {
+  const getFileIcon = useCallback((fileType: string | undefined) => {
+    if (!fileType) return <AttachFile />;
     if (fileType.startsWith('image/')) return <Image />;
     if (fileType.startsWith('video/')) return <VideoFile />;
     if (fileType.startsWith('audio/')) return <Audiotrack />;
@@ -1317,10 +1324,10 @@ const SystemChat: React.FC = () => {
                                     borderColor: 'primary.main'
                                   }}>
                                     <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block' }}>
-                                      Reply to {msg.reply_to.sender_name}
+                                      Reply to {msg.reply_to?.sender_name || 'Unknown'}
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-                                      {formatMessageContent(msg.reply_to.content)}
+                                      {formatMessageContent(msg.reply_to?.content || '')}
                                     </Typography>
                                   </Box>
                                 )}
@@ -1336,24 +1343,32 @@ const SystemChat: React.FC = () => {
                                     borderColor: 'secondary.main'
                                   }}>
                                     <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block' }}>
-                                      Forwarded from {msg.forwarded_from.sender_name} in {msg.forwarded_from.room_name}
+                                      Forwarded from {msg.forwarded_from?.sender_name || 'Unknown'} in {msg.forwarded_from?.room_name || 'Unknown Room'}
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
-                                      {formatMessageContent(msg.forwarded_from.content)}
+                                      {formatMessageContent(msg.forwarded_from?.content || '')}
                                     </Typography>
                                   </Box>
                                 )}
                                 
                                 {/* File attachment */}
                                 {msg.file && (
-                                  <Box sx={{ 
-                                    mb: 1, 
-                                    p: 1, 
-                                    backgroundColor: msg.isOwn ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                                    borderRadius: 1,
-                                    border: 1,
-                                    borderColor: 'divider'
-                                  }}>
+                                  <Tooltip title="Click to download file" arrow>
+                                    <Box 
+                                      sx={{ 
+                                        mb: 1, 
+                                        p: 1, 
+                                        backgroundColor: msg.isOwn ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                        borderRadius: 1,
+                                        border: 1,
+                                        borderColor: 'divider',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                          backgroundColor: msg.isOwn ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
+                                        }
+                                      }}
+                                      onClick={() => downloadFile(msg.id, msg.file!.name)}
+                                    >
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                       {getFileIcon(msg.file.type)}
                                       <Box sx={{ flex: 1 }}>
@@ -1364,19 +1379,15 @@ const SystemChat: React.FC = () => {
                                           {formatFileSize(msg.file.size)}
                                         </Typography>
                                       </Box>
-                                      <IconButton
-                                        size="small"
-                                        onClick={() => downloadFile(msg.file!.id, msg.file!.name)}
-                                      >
-                                        <Download fontSize="small" />
-                                      </IconButton>
+                                      <Download fontSize="small" color="action" />
                                     </Box>
                                   </Box>
+                                  </Tooltip>
                                 )}
                                 
                                 {/* Message content with link detection */}
                                 <Typography variant="body2">
-                                  {formatMessageContent(msg.content)}
+                                  {formatMessageContent(msg.content || '')}
                                 </Typography>
                                 <Typography
                                   variant="caption"

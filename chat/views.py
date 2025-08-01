@@ -15,6 +15,11 @@ from classes.models import Class
 from django.utils import timezone
 from notifications.models import Notification as NotificationModel, Announcement
 from rest_framework.exceptions import PermissionDenied
+from django.http import HttpResponse, Http404
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import os
+import mimetypes
 
 # Create your views here.
 
@@ -33,30 +38,30 @@ class ChatRoomViewSet(viewsets.ModelViewSet):
         elif user.role == user.UserRole.SECRETARY:
             # Secretaries: can only see rooms where all participants are not super admins, and if school admin is present, must be from the same school
             return qs.filter(
-                participants__role__in=[user.UserRole.SECRETARY, user.UserRole.SCHOOL_ADMIN, user.UserRole.TEACHER, user.UserRole.STUDENT, user.UserRole.PARENT, user.UserRole.ACCOUNTANT, user.UserRole.LIBRARIAN, user.UserRole.NURSE, user.UserRole.SECURITY],
-                participants__school=user.school
-            ).exclude(participants__role=user.UserRole.SUPER_ADMIN).distinct()
+                participants__user__role__in=[user.UserRole.SECRETARY, user.UserRole.SCHOOL_ADMIN, user.UserRole.TEACHER, user.UserRole.STUDENT, user.UserRole.PARENT, user.UserRole.ACCOUNTANT, user.UserRole.LIBRARIAN, user.UserRole.NURSE, user.UserRole.SECURITY],
+                participants__user__school=user.school
+            ).exclude(participants__user__role=user.UserRole.SUPER_ADMIN).distinct()
         elif user.role == user.UserRole.TEACHER:
             try:
                 teacher = user.teacher_profile
                 return qs.filter(
-                    Q(participants=user) |
+                    Q(participants__user=user) |
                     Q(room_type='class', class_obj__subjects__teacher=teacher) |
                     Q(room_type='teacher_student', teacher=teacher)
                 ).distinct()
             except:
-                return qs.filter(participants=user)
+                return qs.filter(participants__user=user)
         elif user.role == user.UserRole.STUDENT:
             try:
                 student = user.student_profile
                 return qs.filter(
-                    Q(participants=user) |
+                    Q(participants__user=user) |
                     Q(room_type='class', class_obj=student.current_class) |
                     Q(room_type='teacher_student', student=student)
                 ).distinct()
             except:
-                return qs.filter(participants=user)
-        return qs.filter(participants=user)
+                return qs.filter(participants__user=user)
+        return qs.filter(participants__user=user)
     
     def perform_create(self, serializer):
         user = self.request.user
@@ -74,10 +79,11 @@ class ChatRoomViewSet(viewsets.ModelViewSet):
         room = self.get_object()
         user = request.user
         # Prevent secretaries from joining rooms with super admins
-        if user.role == user.UserRole.SECRETARY and room.participants.filter(role=User.UserRole.SUPER_ADMIN).exists():
+        if user.role == user.UserRole.SECRETARY and room.participants.filter(user__role=User.UserRole.SUPER_ADMIN).exists():
             return Response({'detail': 'Secretaries cannot join chat rooms with system admins.'}, status=403)
-        if user not in room.participants.all():
-            room.participants.add(user)
+        if not room.participants.filter(user=user).exists():
+            from .models import ChatParticipant
+            ChatParticipant.objects.create(room=room, user=user)
             return Response({'message': 'Successfully joined the room'})
         return Response({'message': 'Already a member of this room'})
     
@@ -87,8 +93,9 @@ class ChatRoomViewSet(viewsets.ModelViewSet):
         room = self.get_object()
         user = request.user
         
-        if user in room.participants.all():
-            room.participants.remove(user)
+        if room.participants.filter(user=user).exists():
+            from .models import ChatParticipant
+            ChatParticipant.objects.filter(room=room, user=user).delete()
             return Response({'message': 'Successfully left the room'})
         return Response({'message': 'Not a member of this room'})
 
@@ -110,7 +117,7 @@ class MessageViewSet(viewsets.ModelViewSet):
             return queryset
         else:
             # Users can only see messages from rooms they're part of
-            room_ids = user.chat_rooms.values_list('id', flat=True)
+            room_ids = user.chat_participations.values_list('room_id', flat=True)
             return queryset.filter(room_id__in=room_ids)
     
     def perform_create(self, serializer):
@@ -131,7 +138,7 @@ class MessageViewSet(viewsets.ModelViewSet):
     def unread_count(self, request):
         """Get unread message count for user"""
         user = request.user
-        room_ids = user.chat_rooms.values_list('id', flat=True)
+        room_ids = user.chat_participations.values_list('room_id', flat=True)
         
         # Count messages that haven't been read by this user
         unread_count = Message.objects.filter(
@@ -150,7 +157,7 @@ class MessageViewSet(viewsets.ModelViewSet):
         message = self.get_object()
         user = request.user
         
-        if user in message.room.participants.all():
+        if message.room.participants.filter(user=user).exists():
             # Create or update MessageRead record
             MessageRead.objects.get_or_create(
                 message=message,
@@ -187,6 +194,164 @@ class MessageViewSet(viewsets.ModelViewSet):
             )
         
         return Response({'message': f'Marked {unread_messages.count()} messages as read'})
+
+    @action(detail=False, methods=['post'])
+    def upload_file(self, request):
+        """Upload a file and create a message with the file attachment"""
+        user = request.user
+        room_id = request.data.get('room_id')
+        file_obj = request.FILES.get('file')
+        
+        if not room_id:
+            return Response({'error': 'room_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not file_obj:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            room = ChatRoom.objects.get(id=room_id)
+        except ChatRoom.DoesNotExist:
+            return Response({'error': 'Chat room not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if user is a participant in the room
+        if not room.participants.filter(user=user).exists():
+            return Response({'error': 'Not authorized to send messages in this room'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Validate file size (10MB limit)
+        if file_obj.size > 10 * 1024 * 1024:
+            return Response({'error': 'File size too large. Maximum size is 10MB'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate file type
+        allowed_types = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'text/plain', 'text/csv'
+        ]
+        
+        if file_obj.content_type not in allowed_types:
+            return Response({'error': 'File type not allowed'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create the message with file attachment
+        message = Message.objects.create(
+            room=room,
+            sender=user,
+            content=f"📎 {file_obj.name}",
+            message_type=Message.MessageType.FILE,
+            attachment=file_obj,
+            attachment_name=file_obj.name
+        )
+        
+        # Mark message as unread for all room participants except the sender
+        room_participants = room.participants.all()
+        for participant in room_participants:
+            if participant.user != user:
+                MessageRead.objects.get_or_create(
+                    message=message,
+                    user=participant.user,
+                    defaults={'read_at': None}
+                )
+        
+        serializer = MessageSerializer(message)
+        return Response({
+            'message': 'File uploaded successfully',
+            'data': serializer.data
+        }, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['get'])
+    def download_file(self, request, pk=None):
+        """Download a file attachment from a message"""
+        message = self.get_object()
+        user = request.user
+        
+        # Check if user is a participant in the room
+        if not message.room.participants.filter(user=user).exists():
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        if not message.attachment:
+            return Response({'error': 'No file attachment found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            # Get file path and check if it exists
+            file_path = message.attachment.path
+            if not os.path.exists(file_path):
+                return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Determine content type
+            content_type, _ = mimetypes.guess_type(file_path)
+            if not content_type:
+                content_type = 'application/octet-stream'
+            
+            # Read and return file
+            with open(file_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type=content_type)
+                response['Content-Disposition'] = f'attachment; filename="{message.attachment_name}"'
+                return response
+                
+        except Exception as e:
+            return Response({'error': 'Error downloading file'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['get'])
+    def get_file_info(self, request, pk=None):
+        """Get file information for a message"""
+        message = self.get_object()
+        user = request.user
+        
+        # Check if user is a participant in the room
+        if not message.room.participants.filter(user=user).exists():
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        if not message.attachment:
+            return Response({'error': 'No file attachment found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            file_path = message.attachment.path
+            if not os.path.exists(file_path):
+                return Response({'error': 'File not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            file_size = os.path.getsize(file_path)
+            content_type, _ = mimetypes.guess_type(file_path)
+            
+            return Response({
+                'id': message.id,
+                'filename': message.attachment_name,
+                'size': file_size,
+                'content_type': content_type,
+                'uploaded_at': message.created_at,
+                'uploaded_by': message.sender.username
+            })
+            
+        except Exception as e:
+            return Response({'error': 'Error getting file info'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['delete'])
+    def delete_file(self, request, pk=None):
+        """Delete a file attachment from a message"""
+        message = self.get_object()
+        user = request.user
+        
+        # Check if user is the sender or has admin privileges
+        if user != message.sender and user.role not in [user.UserRole.SUPER_ADMIN, user.UserRole.SCHOOL_ADMIN]:
+            return Response({'error': 'Not authorized to delete this file'}, status=status.HTTP_403_FORBIDDEN)
+        
+        if not message.attachment:
+            return Response({'error': 'No file attachment found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            # Delete the file from storage
+            if message.attachment:
+                message.attachment.delete(save=False)
+            
+            # Update message to remove attachment
+            message.attachment = None
+            message.attachment_name = ''
+            message.content = "🗑️ File deleted"
+            message.save()
+            
+            return Response({'message': 'File deleted successfully'})
+            
+        except Exception as e:
+            return Response({'error': 'Error deleting file'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class NotificationViewSet(viewsets.ModelViewSet):
